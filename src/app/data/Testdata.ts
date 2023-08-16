@@ -1,6 +1,6 @@
-import { Category } from "../model/Category";
-import { Priority } from "../model/Priority";
-import { Task } from "../model/Task";
+import { Category } from "../models/Category";
+import { Priority } from "../models/Priority";
+import { Task } from "../models/Task";
 
 export class TestData {
 

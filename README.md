@@ -18,3 +18,5 @@ bootstrap для разметки
 angular material
 
 при добавлении файлов в assets желательно перезапустить сервер
+
+можно подклчать bootstrap-css-only        
