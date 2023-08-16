@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core';
+import { Category } from '../models/Category';
+import { TestData } from '../data/Testdata';
 
 
 @Injectable({
@@ -8,5 +10,12 @@ import { Injectable } from '@angular/core';
 
 export class DataHandlerService {
 
-  constructor() { }
+  constructor() { console.log("создался объект DataHandlerService") }
+
+  getCategoryes(): Category[] {
+
+    return TestData.categories;
+  }
+
+
 }

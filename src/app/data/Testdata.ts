@@ -7,9 +7,9 @@ export class TestData {
 
     static categories: Category[] = [
         { id: 1, title: "Работа" },
-        { id: 2, title: "Работа" },
-        { id: 3, title: "Работа" },
-        { id: 4, title: "Работа" },
+        { id: 2, title: "Здоровье" },
+        { id: 3, title: "Любовь" },
+        { id: 4, title: "Питание" },
     ];
 
     static priorities: Priority[] = [
