@@ -19,4 +19,6 @@ angular material
 
 при добавлении файлов в assets желательно перезапустить сервер
 
-можно подклчать bootstrap-css-only        
+можно подклчать bootstrap-css-only
+
+лучше взять css framework tailwind и научиться на нем делать простой, но понятный и красивый фронтенд
