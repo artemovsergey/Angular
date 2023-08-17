@@ -6,12 +6,14 @@ import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 
 import { PriorityesComponent } from './components/priorityes/priorityes.component';
 import { CategoryesComponent } from './components/categoryes/categoryes.component';
+import { TasksComponent } from './components/tasks/tasks.component';
 
 @NgModule({
   declarations: [
     AppComponent,
     CategoryesComponent,
     PriorityesComponent,
+    TasksComponent,
   ],
   imports: [
     BrowserModule,

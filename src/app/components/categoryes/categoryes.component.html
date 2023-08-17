@@ -16,8 +16,11 @@
   <hr class="horizontal light mt-0 mb-2">
 
   <div class="collapse navbar-collapse  w-auto " id="sidenav-collapse-main">
-    <ul class="navbar-nav" *ngFor="let c of categories">
-
+    <ul class="navbar-nav" *ngFor="let c of categories"
+    (click)="showTaskByCategory(c)"
+    >
+       
+        
       <li class="nav-item">
         <a class="nav-link text-white " href="./dashboard.html">
 
