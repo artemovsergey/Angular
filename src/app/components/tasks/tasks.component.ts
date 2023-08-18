@@ -1,4 +1,5 @@
 import { Component, OnInit } from '@angular/core';
+import { TestData } from 'src/app/data/Testdata';
 import { Category } from 'src/app/models/Category';
 import { Task } from 'src/app/models/Task';
 import { DataHandlerService } from 'src/app/services/data-handler.service';
@@ -15,12 +16,18 @@ export class TasksComponent implements OnInit {
   tasks: Task[] | undefined;
 
   constructor(private dataService: DataHandlerService) {
-
-    this.tasks = this.dataService.getTasks();
-
   }
 
   ngOnInit(): void {
+
+    // Подписываемся на объект subject, внутри функция обратного вызова
+    // также надо типизировать subject объект
+    this.dataService.taskSubject.subscribe(v => {
+
+      this.tasks = v;
+      return console.log(v);
+
+    });
     // throw new Error('Method not implemented.');
   }
 

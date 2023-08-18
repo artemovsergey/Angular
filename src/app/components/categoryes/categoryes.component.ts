@@ -25,7 +25,7 @@ export class CategoryesComponent implements OnInit {
   }
 
   showTaskByCategory(category: Category){
-    this.dataService.getTaskByCategory(category);
+    this.dataService.updateTasksbyCategory(category);
   }
 
-}
+} 
