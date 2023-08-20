@@ -7,12 +7,13 @@ import { DataHandlerService } from 'src/app/services/data-handler.service';
 @Component({
   selector: 'app-tasks',
   templateUrl: './tasks.component.html',
-  styleUrls: ['./tasks.component.css']
+  // styleUrls: ['./tasks.component.css']
 })
 
 
 export class TasksComponent implements OnInit {
 
+  detail = true;
   tasks: Task[] | undefined;
 
   constructor(private dataService: DataHandlerService) {
@@ -29,6 +30,12 @@ export class TasksComponent implements OnInit {
 
     });
     // throw new Error('Method not implemented.');
+  }
+
+  showDetail() {
+
+    this.detail = !this.detail;
+    console.log(this.detail);
   }
 
 

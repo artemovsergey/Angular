@@ -7,6 +7,8 @@ import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { PriorityesComponent } from './components/priorityes/priorityes.component';
 import { CategoryesComponent } from './components/categoryes/categoryes.component';
 import { TasksComponent } from './components/tasks/tasks.component';
+import { ProductsComponent } from './components/products/products.component';
+import { HttpClientModule } from '@angular/common/http';
 
 @NgModule({
   declarations: [
@@ -14,12 +16,16 @@ import { TasksComponent } from './components/tasks/tasks.component';
     CategoryesComponent,
     PriorityesComponent,
     TasksComponent,
+    ProductsComponent,
   ],
   imports: [
     BrowserModule,
-    BrowserAnimationsModule
+    BrowserAnimationsModule,
+    HttpClientModule
   ],
   providers: [],
   bootstrap: [AppComponent]
 })
+
+
 export class AppModule { }

@@ -5,7 +5,7 @@ import { DataHandlerService } from 'src/app/services/data-handler.service';
 @Component({
   selector: 'app-categoryes',
   templateUrl: './categoryes.component.html',
-  styleUrls: ['./categoryes.component.css']
+  // styleUrls: ['./categoryes.component.css']
 })
 
 export class CategoryesComponent implements OnInit {
