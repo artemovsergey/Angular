@@ -29,6 +29,34 @@ export class TestData {
             category: TestData.categories[0],
             date: new Date("2022-01-01")
         },
+
+        {
+            id: 2,
+            title: "Купить масло",
+            completed: true,
+            priority: TestData.priorities[1],
+            category: TestData.categories[1],
+            date: new Date("2022-01-01")
+        },
+
+        {
+            id: 3,
+            title: "Купить хлеб",
+            completed: true,
+            priority: TestData.priorities[2],
+            category: TestData.categories[3],
+            date: new Date("2022-01-01")
+        },
+
+        {
+            id: 4,
+            title: "Купить яйца",
+            completed: true,
+            priority: TestData.priorities[0],
+            category: TestData.categories[1],
+            date: new Date("2022-01-01")
+        },
+
     ]
 
 
