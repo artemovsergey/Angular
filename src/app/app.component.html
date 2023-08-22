@@ -1,17 +1,33 @@
-<div class="max-w-2xl container mx-auto pt-10">
+<!-- The grid parent -->
+<div class="mx-auto my-auto container grid grid-cols-2">
+  <!-- Header section -->
+  <!-- <header class="col-span-5 p-10 bg-amber-200">
+    <h1 class="text-center text-2xl">Header</h1>
+  </header> -->
 
-  <app-categoryes></app-categoryes>
+  <!-- Left menu -->
+  <aside class="p-10 bg-gray-700">
+    <h1 class="text-center text-2xl text-white">
 
-  <app-products [title]=title >
-  </app-products>
-  
-  
+      <app-categoryes></app-categoryes>
 
-  <div class="bg-yellow-500">
-    <app-tasks></app-tasks>
-  </div>
+    </h1>
+  </aside>
 
-  
+  <!-- Main content -->
+  <main class="p-10 bg-blue-200">
+    <h1 class="text-center text-2xl">
+      <app-tasks></app-tasks>
+    </h1>
+  </main>
 
+  <!-- Right sidebar -->
+  <!-- <aside class="col-span-5 md:col-span-1 p-10 bg-rose-300">
+    <h1 class="text-center text-2xl">Sidebar</h1>
+  </aside> -->
+
+  <!-- Footter -->
+  <!-- <footer class="col-span-5 p-10 bg-green-300">
+    <h1 class="text-center text-2xl">Footer</h1>
+  </footer> -->
 </div>
-

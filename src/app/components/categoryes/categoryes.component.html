@@ -1,26 +1,9 @@
+<ul *ngFor="let c of categories">
 
 
-  <aside class="py-4 px-6 border rounded flex items-center flex-col mb-2">
+  <li (click)="showTaskByCategory(c)">
+    <span>{{c.title}}</span>
 
-    <div>
-      <span>Категории</span>
-    </div>
+  </li>
 
-
-    <hr>
-
-   
-      <ul *ngFor="let c of categories">
-
-
-        <li (click)="showTaskByCategory(c)">
-          <span>{{c.title}}</span>
-
-        </li>
-
-      </ul>
-
-
-   
-
-  </aside>
+</ul>

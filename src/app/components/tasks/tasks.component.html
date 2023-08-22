@@ -1,25 +1,17 @@
-<div class="py-4 px-6 border rounded flex items-center flex-col mb-2">
+<ul>
+  <li *ngFor="let task of tasks; let i = index">
 
+    <div *ngIf="!detail">
+      <h2 class="mb-2 text-lg text-center"> {{task.category?.title}}</h2>
+      <h3 class="mb-2 text-lg text-center"> {{task.title}} </h3>
+    </div>
 
-  <ul>
-    <li *ngFor="let task of tasks; let i = index">
-
-      <div *ngIf="!detail">
-        <h2 class="mb-2 text-lg text-center"> {{task.category?.title}}</h2>
-        <h3 class="mb-2 text-lg text-center"> {{task.title}} </h3>
-      </div>
-
-      <button class="border py-2 px-4 rounded" (click)="showDetail()" class="border py-2  px-4 rouded bg-blue-400"
-        [ngClass]="{
+    <button class="border py-2 px-4 rounded" (click)="showDetail()" class="border py-2  px-4 rouded bg-blue-400"
+      [ngClass]="{
         'bg-yellow-400':!detail,
         'bg-blue-400':detail,
       }"> {{ detail ? 'Show' : 'Hide' }} Details</button>
 
 
-    </li>
-
-
-
-  </ul>
-
-</div>
+  </li>
+</ul>
