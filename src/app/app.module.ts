@@ -9,6 +9,11 @@ import { TasksComponent } from './components/tasks/tasks.component';
 
 import { HttpClientModule } from '@angular/common/http';
 
+import {MatTableModule} from '@angular/material/table';
+import {MatSortModule} from '@angular/material/sort';
+import {MatPaginatorModule} from '@angular/material/paginator';
+
+
 @NgModule({
   declarations: [
     AppComponent,
@@ -20,7 +25,12 @@ import { HttpClientModule } from '@angular/common/http';
   imports: [
     BrowserModule,
     BrowserAnimationsModule,
-    HttpClientModule
+    HttpClientModule,
+
+    MatTableModule,
+    MatSortModule,
+    MatPaginatorModule
+    
   ],
   providers: [],
   bootstrap: [AppComponent]
