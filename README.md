@@ -1,5 +1,13 @@
 # Технический журнал Angular
 
+# Создание проекта
+
+```cmd
+ng new nameapp --skip-tests
+```
+
+
+
 https://roadmap.sh/frontend
 
 |Задача|Реализация|
