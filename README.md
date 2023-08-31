@@ -17,6 +17,12 @@ npm run start
 ng serve
 ```
 
+# Создание компонента
+
+```
+ng g c namecomponent 
+```
+
 
 # Карта 
 
