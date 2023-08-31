@@ -25,6 +25,16 @@ ng g c namecomponent
 
 # Роутер
 
+```ts
+// определение маршрутов
+const routes: Routes =[
+  { path: '', component: HomeComponent},
+  { path: 'about', component: AboutComponent},
+  { path: 'contact', redirectTo: '/about', pathMatch:'full'}, // переадресация c полным соответствием
+  { path: '**', component: HomeComponent } // если не подходит все маршруты
+];
+```
+
 чтобы можно было внедрить в AppComponent тот компонент, который обрабатывает запрос, необходимо использовать элемент RouterOutlet. Для этого изменим код AppComponent:
 
 
