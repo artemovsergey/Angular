@@ -6,6 +6,17 @@
 ng new nameapp --skip-tests
 ```
 
+# Запуск
+
+команда из ```package.json```
+```cmd
+npm run start
+```
+
+```cmd
+ng serve
+```
+
 
 
 https://roadmap.sh/frontend
