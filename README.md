@@ -28,6 +28,18 @@ ng g c namecomponent
 чтобы можно было внедрить в AppComponent тот компонент, который обрабатывает запрос, необходимо использовать элемент RouterOutlet. Для этого изменим код AppComponent:
 
 
+```html
+<a routerLink=""
+   routerLinkActive="active" <!-- active class css -->
+   [routerLinkActiveOptions]="{exact:true}"
+   >
+   Go to Home
+</a>
+```
+
+Значение ```{exact:true}``` указывает на то, что для установки активной ссылки будет применяться полное соответствие:
+
+
 
 
 
