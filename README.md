@@ -143,3 +143,12 @@ https://roadmap.sh/frontend
 - php hosting
 - github pages
 
+# Обучение
+
+- верстка любого интерфейса
+- работа с роутером
+
+
+
+
+
