@@ -143,12 +143,39 @@ https://roadmap.sh/frontend
 - php hosting
 - github pages
 
-# Обучение
+# Font-Awesome
 
-- верстка любого интерфейса
-- работа с роутером
+```
+npm install font-awesome
+```
 
+## Bootstrap
 
+```
+ng add ngx-bootstrap
+```
 
+# Http Get
+
+```Typescript
+export class AppComponent implements OnInit {
+
+  title = "client";
+  users: any;
+  
+  constructor(private http: HttpClient) { }
+
+  ngOnInit(): void {
+    this.getUsers();
+  }
+
+  getUsers() {
+    this.http.get('http://localhost:5058/api/users').subscribe({
+      next: response => this.users = response,
+      error: error => console.log(error)
+    })
+  }
+}
+```
 
 
