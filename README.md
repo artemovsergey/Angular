@@ -149,7 +149,7 @@ https://roadmap.sh/frontend
 npm install font-awesome
 ```
 
-## Bootstrap
+# Bootstrap
 
 ```
 ng add ngx-bootstrap
