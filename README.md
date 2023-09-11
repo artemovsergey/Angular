@@ -25,7 +25,7 @@ ng serve
 # Создание компонента
 
 ```
-ng g c namecomponent 
+ng g c namecomponent --skip-tests
 ```
 
 # Роутер
