@@ -7,6 +7,9 @@ ng new SportsStore --directory SportsStore/ClientApp --routing true --style css 
 
 dotnet new globaljson --sdk-version 3.0.100
 
+dotnet new mvc --language C# --auth None
+
+
 # Создание проекта
 
 ```cmd
