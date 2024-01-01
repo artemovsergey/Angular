@@ -1,9 +1,10 @@
 # Технический журнал Angular
 
-# Задачи
 
-- Написать интерфейс на чистом CSS
-
+npm install --global @angular/cli
+ng new SportsStore --directory SportsStore/ClientApp --routing true --style css
+--skip-tests true --skip-git true
+dotnet new globaljson --sdk-version 3.0.100
 
 # Создание проекта
 
