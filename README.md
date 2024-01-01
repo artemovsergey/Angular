@@ -9,6 +9,11 @@ dotnet new globaljson --sdk-version 3.0.100
 
 dotnet new mvc --language C# --auth None
 
+dotnet dev-certs https –clean
+
+dotnet dev-certs https --trust
+
+
 
 # Создание проекта
 
