@@ -1,24 +1,10 @@
 # Технический журнал Angular
 
-
-npm install --global @angular/cli
-
-ng new SportsStore --directory SportsStore/ClientApp --routing true --style css --skip-tests true --skip-git true
-
-dotnet new globaljson --sdk-version 3.0.100
-
-dotnet new mvc --language C# --auth None
-
-dotnet dev-certs https –clean
-
-dotnet dev-certs https --trust
-
-Microsoft.AspNetCore.SpaServices.Extensions
-
 # Создание проекта
 
 ```cmd
 ng new nameapp --skip-tests
+ng new nameapp --directory SportsStore/ClientApp --routing true --style css --skip-tests true --skip-git true
 ```
 
 # Запуск
