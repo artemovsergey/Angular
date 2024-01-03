@@ -11,11 +11,7 @@ ng new nameapp --directory SportsStore/ClientApp --routing true --style css --sk
 
 команда из ```package.json```
 ```cmd
-npm run start
-```
-
-```cmd
-ng serve
+npm start
 ```
 
 # Создание компонента
