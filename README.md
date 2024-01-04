@@ -26,7 +26,7 @@ npm start
 
 Замечание:  imports:[FormsModule] для двусторонней привязки
 
-
+- <h1 [style.font-size]="count+'px'"> {{title}}</h1>
 
 
 
