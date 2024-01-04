@@ -24,7 +24,7 @@ npm start
 - [value]="title"
 - [{ngModel}="title"]
 
-
+Замечание:  imports:[FormsModule] для двусторонней привязки
 
 
 
