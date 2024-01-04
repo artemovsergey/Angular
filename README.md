@@ -26,9 +26,20 @@ npm start
 
 Замечание:  imports:[FormsModule] для двусторонней привязки
 
-- <h1 [style.font-size]="count+'px'"> {{title}}</h1>
 
+- стили
 
+```
+<h1 [style.font-size]="count+'px'"> {{title}}</h1>
+```
+
+- класс
+```
+<button [class]="enable ? 'newclass' : 'oldclass'"
+        (click)="increase()">
+        Нажать
+</button>
+```
 
 
 # Создание компонента
