@@ -18,6 +18,19 @@ ng new nameapp --directory SportsStore/ClientApp --routing true --style css --sk
 npm start
 ```
 
+## Binding
+
+- {{title}}
+- [value]="title"
+- [{ngModel}="title"]
+
+
+
+
+
+
+
+
 # Создание компонента
 
 ```
