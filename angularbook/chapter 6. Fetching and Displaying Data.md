@@ -1160,6 +1160,1105 @@ var city = (from c in _context.Cities where c.Name == "New York" select c).First
 Оба дают один и тот же результат с одинаковой производительностью, поскольку выражения запроса переводятся в
 их эквиваленты лямбда-выражений перед компиляцией.
 
+# Плюсы и минусы System.Linq.Dynamic.Core
+Теперь, поскольку LINQ включен в .NET Framework начиная с версии 3.5 и поставляется с каждым
+последующая версия ASP.NET с тех пор, что на самом деле делает пакет System.Linq.Dynamic.Core
+делать и почему мы его используем?
+Как мы видим из двух предыдущих примеров, как лямбда-выражения, так и выражения запроса
+использовать строго типизированный подход: всякий раз, когда мы запрашиваем объект любого типа с помощью LINQ, источник
+type – вместе со всеми свойствами, которые мы хотим проверить нашим запросом – должны быть известны компилятору. Это означает, что мы не сможем использовать эти методы с универсальными объектами (объектами) или
+типы (<T>). Вот тут-то на помощь и приходит Linq.Dynamic, позволяющий разработчику писать лямбда-выражения.
+выражения и выражения запроса с литеральными строками и переводить их в строго типизированный формат.
+эквиваленты с использованием отражения.
+Вот тот же запрос, что и раньше, написанный с использованием System.Linq.Dynamic.Core:
+
+```Csharp
+var city = _context.Cities.Where("Name = @1", "New York").First();
+```
+Мы сразу видим разницу, а также то огромное преимущество, которое мы можем получить, используя такие
+подход: мы сможем строить наши запросы динамически, независимо от того, имеем ли мы дело
+со строго типизированными объектами или универсальными типами, как мы это делали в исходном коде ApiResult a.
+совсем недавно.
+
+Однако у такого подхода будет и серьезный недостаток: наш код будет менее тестируемым и
+слишком подвержен ошибкам, по крайней мере, по двум важным причинам:
+- Мы окажемся на расстоянии буквальной строки от ошибок запроса, которые почти всегда приводят к серьезным
+сбои
+- Риск нежелательных запросов (включая атаки SQL-инъекций) может возрасти экспоненциально.
+в зависимости от того, как мы строим эти запросы и/или откуда мы получаем наши динамические строки
+
+Первая проблема плоха, но вторая еще хуже: открытость для атак с использованием SQL-инъекций может иметь разрушительные последствия, и поэтому этого следует избегать любой ценой, включая избавление от Системы.
+Пакет Linq.Dynamic.Core.
+
+# Предотвращение SQL-инъекции
+К счастью, нам не нужно этого делать; хотя мы получаем две потенциально опасные переменные
+строки, поступающие от клиента — sortColumn и sortOrder — мы уже внедрили эффективные
+контрмеры для них обоих в предыдущем исходном коде ApiResult.
+Вот что мы сделали для sortOrder:
+
+```Csharp
+sortOrder = !string.IsNullOrEmpty(sortOrder)
+ && sortOrder.ToUpper() == "ASC"
+ ? "ASC"
+ : "DESC";
+```
+Как мы видим, мы преобразуем его либо в «ASC», либо в «DESC», прежде чем использовать где-либо, таким образом не оставляя никаких
+возможности для SQL-инъекций.
+Параметр sortColumn обрабатывать гораздо сложнее, поскольку теоретически он может содержать любые
+возможное имя столбца, сопоставленное с любым из наших объектов: id, name, lat, lon, iso2, iso3... Если бы мы
+проверьте их все, нам понадобится очень длинный условный блок! Не говоря уже о том, что это будет
+также будет очень сложно поддерживать всякий раз, когда мы добавляем в наш проект новые объекты и/или свойства.
+Именно по этой причине мы выбрали совершенно другой – и, возможно, лучший – подход, который опирается на
+при использовании следующего метода IsValidProperty:
+
+```Csharp
+public static bool IsValidProperty(
+ string propertyName,
+ bool throwExceptionIfNotFound = true)
+{
+ var prop = typeof(T).GetProperty(
+ propertyName,
+ BindingFlags.IgnoreCase |
+ BindingFlags.Public |
+ BindingFlags.Instance);
+ if (prop == null && throwExceptionIfNotFound)
+ throw new NotSupportedException($"ERROR: Property '{propertyName}' does
+not exist.");
+ return prop != null;
+}
+```
+Как мы видим, этот метод проверяет, что данное имя свойства соответствует существующему типизированному
+Свойство в нашем универсальном классе сущностей <T>: если оно есть, оно возвращает True; в противном случае он выдает
+NotSupportedException (или возвращает False, в зависимости от того, как мы его вызываем). Это отличный способ защититься
+наш код против SQL-инъекции, потому что абсолютно невозможно, чтобы вредоносная строка совпадала
+одно из свойств нашей сущности.
+
+Проверка имени свойства реализована с помощью System.Reflection — метода, который используется для проверки и/или получения метаданных типов во время выполнения. Работать с
+отражения, нам нужно включить пространство имен System.Reflection в наш класс, что
+это именно то, что мы сделали в начале исходного кода нашего улучшенного ApiResult.
+
+Как мы видим, взглянув на исходный код ApiResult, такой метод вызывается в
+следующий путь
+
+```Csharp
+if (!string.IsNullOrEmpty(sortColumn)
+ && IsValidProperty(sortColumn))
+{
+ /// if we are here, sortColumn is safe to use
+}
+```
+Эти фигурные скобки определяют нашу зону безопасности SQL-инъекций: пока мы имеем дело с sortColumn внутри
+их, нам не о чем беспокоиться.
+
+По правде говоря, даже после реализации этого защитного подхода небольшая угроза все еще существует.
+мы можем быть подвержены: если у нас есть зарезервированные столбцы/свойства, которые нам не нужны
+клиент, с которым нужно взаимодействовать (например, системные столбцы), предыдущая контрмера
+не помешает ему это сделать; хотя и не в состоянии признать их существование или
+чтобы прочитать свои данные, опытный пользователь все равно может «упорядочить» результаты таблицы по
+их – при условии, что пользователь каким-то образом знает их точное имя.
+Если мы хотим предотвратить эту удаленную (но теоретически возможную) утечку, мы можем установить для этих свойств частные значения (поскольку мы указали нашему методу IsValidProperty проверять только общедоступные
+свойства) и/или переосмыслить всю логику метода, чтобы она лучше соответствовала нашим потребностям безопасности.
+
+# Обновление CitiesController
+Теперь, когда мы улучшили наш класс ApiResult, мы можем реализовать его в нашем CitiesController.
+Откройте файл /Controllers/CitiesController.cs и соответствующим образом измените его содержимое (обновлено).
+строки выделены):
+
+```Csharp
+// GET: api/Cities
+// GET: api/Cities/?pageIndex=0&pageSize=10
+// GET: api/Cities/?pageIndex=0&pageSize=10&sortColumn=name&
+// sortOrder=asc
+[HttpGet]
+public async Task<ActionResult<ApiResult<City>>> GetCities(
+ int pageIndex = 0,
+ int pageSize = 10,
+ string? sortColumn = null,
+ string? sortOrder = null)
+{
+ return await ApiResult<City>.CreateAsync(
+ _context.Cities,
+ pageIndex,
+ pageSize,
+ sortColumn,
+ sortOrder);
+}
+```
+
+Благодаря этим двум новым параметрам наш метод GetCities сможет сортировать города по назначению.
+мы хотим.
+
+Мы закончили с серверной частью; давайте теперь перейдем к интерфейсу
+
+# Обновление приложения Angular
+Как всегда, нам нужно изменить три файла:
+- Файл angular-material.module.ts, куда нам нужно добавить новый @angular/material.
+модуль
+- Файл cities.component.ts для реализации бизнес-логики сортировки.
+- Файл cities.component.html для привязки новых переменных, методов и ссылок, определенных
+в файле .ts в шаблоне пользовательского интерфейса
+Давайте сделаем это.
+
+# angular-material.module.ts
+Откройте файл /src/app/angular-material.module.ts и добавьте ссылки на MatSortModule:
+
+```ts
+import { MatSortModule } from '@angular/material/sort';
+```
+Не забудьте также обновить массивы импорта и экспорта @NgModule.
+С этого момента мы сможем импортировать классы, связанные с MatSortModule, в любой компонент Angular.
+
+# cities.component.ts
+После этого откройте файл города.компонент.тс и внесите следующие изменения (обновленные строки
+выделены):
+
+```ts
+import { Component, OnInit, ViewChild } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { environment } from './../../environment';
+import { MatTableDataSource } from '@angular/material/table';
+import { MatPaginator, PageEvent } from '@angular/material/paginator';
+import { MatSort } from '@angular/material/sort';
+import { City } from './city';
+@Component({
+ selector: 'app-cities',
+ templateUrl: './cities.component.html',
+ styleUrls: ['./cities.component.scss']
+})
+export class CitiesComponent implements OnInit {
+ public displayedColumns: string[] = ['id', 'name', 'lat', 'lon'];
+ public cities!: MatTableDataSource<City>;
+ defaultPageIndex: number = 0;
+defaultPageSize: number = 10;
+ public defaultSortColumn: string = "name";
+ public defaultSortOrder: "asc" | "desc" = "asc";
+ @ViewChild(MatPaginator) paginator!: MatPaginator;
+ @ViewChild(MatSort) sort!: MatSort;
+ constructor(private http: HttpClient) {
+ }
+ ngOnInit() {
+ this.loadData();
+ }
+ loadData() {
+ var pageEvent = new PageEvent();
+ pageEvent.pageIndex = this.defaultPageIndex;
+ pageEvent.pageSize = this.defaultPageSize;
+ this.getData(pageEvent);
+ }
+ getData(event: PageEvent) {
+ var url = environment.baseUrl + 'api/Cities';
+ var params = new HttpParams()
+ .set("pageIndex", event.pageIndex.toString())
+ .set("pageSize", event.pageSize.toString())
+ .set("sortColumn", (this.sort)
+ ? this.sort.active
+ : this.defaultSortColumn)
+ .set("sortOrder", (this.sort)
+ ? this.sort.direction
+ : this.defaultSortOrder);
+ this.http.get<any>(url, { params })
+ .subscribe(result => {
+ console.log(result);
+ this.paginator.length = result.totalCount;
+ this.paginator.pageIndex = result.pageIndex;
+ this.paginator.pageSize = result.pageSize;
+ this.cities = new MatTableDataSource<City>(result.data);
+ }, error => console.error(error));
+}
+}
+```
+
+Вот разбивка наиболее важных изменений:
+- Мы импортировали ссылку MatSort из пакета @angular/material.
+- Мы добавили четыре новые переменные класса для установки значений по умолчанию для разбиения на страницы и сортировки: defaultPageIndex,
+defaultPageSize, defaultSortColumn и defaultSortOrder. Два из них определены
+как общедоступные, поскольку нам нужно использовать их из шаблона HTML посредством двусторонней привязки данных.
+- Мы перенесли первоначальный вызов getData() из конструктора класса в новый централизованный вызов loadData().
+функцию, чтобы мы могли привязать ее к таблице (как мы вскоре увидим).
+- Мы добавили параметры HTTP GET sortColumn и sortOrder в наш объект HttpParams, поэтому
+что мы можем отправить информацию о сортировке на сервер.
+Теперь мы можем перейти к файлу шаблона HTML.
+
+# cities.component.html
+Откройте файл города.компонент.html и внесите следующие изменения (обновленные строки выделены):
+
+```html
+<table mat-table [dataSource]="cities"
+ class="mat-elevation-z8"
+ [hidden]="!cities"
+ matSort (matSortChange)="loadData()"
+ [matSortActive]="defaultSortColumn"
+ [matSortDirection]="defaultSortOrder">
+ <!-- Id Column -->
+ <ng-container matColumnDef="id">
+ <th mat-header-cell *matHeaderCellDef mat-sort-header>ID</th>
+ <td mat-cell *matCellDef="let city"> {{city.id}} </td>
+ </ng-container>
+ <!-- Name Column -->
+ <ng-container matColumnDef="name">
+ <th mat-header-cell *matHeaderCellDef mat-sort-header>Name</th>
+ <td mat-cell *matCellDef="let city"> {{city.name}} </td>
+ </ng-container>
+ <!-- Lat Column -->
+ <ng-container matColumnDef="lat">
+<th mat-header-cell *matHeaderCellDef mat-sort-header>Latitude
+ </th>
+ <td mat-cell *matCellDef="let city"> {{city.lat}} </td>
+ </ng-container>
+ <!-- Lon Column -->
+ <ng-container matColumnDef="lon">
+ <th mat-header-cell *matHeaderCellDef mat-sort-header>Longitude
+ </th>
+ <td mat-cell *matCellDef="let city"> {{city.lon}} </td>
+ </ng-container>
+ <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+ <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+</table>
+```
+
+Вот что мы сделали вкратце:
+- Мы добавили следующие атрибуты в элемент ```<table mat-table>```:
+- matSort: ссылка на локальную переменную matSort, которую мы добавили в city.comComponent.
+ts файл на ранней стадии
+- (matSortChange): привязка события, которая будет выполнять метод sortData() (также
+определенный ранее в файле .ts) при каждой попытке сортировки пользователя
+- matSortActive и matSortDirection: две привязки данных к defaultSortColumn.
+и переменные defaultSortOrder, которые мы ранее определили в файле .ts.
+- Мы добавили атрибут mat-sort-header к каждому элементу ```<th mat-header-cell>``` (по одному для
+каждый столбец таблицы)
+
+Теперь мы можем понять, почему мы не использовали изящный URL-адрес, который мы определили ранее в нашем ASP.NET.
+CitiesController и вместо этого выбрал стандартные параметры GET: этот подход
+позволяет нам программно добавлять неопределенное количество параметров HTTP GET в нашу
+запрос благодаря классу HttpParams из пакета @angular/common/http.
+
+Давайте быстро проверим это, нажав F5 и перейдя к представлению «Города». Вот что мы должны уметь
+чтобы увидеть:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/b1e85abb-f4d0-4022-8908-fa0f7d3b6dc5)
+
+Города теперь отсортированы в алфавитном порядке по возрастанию. Если мы нажмем на различные заголовки столбцов,
+мы можем изменить их порядок по своему усмотрению: первый щелчок отсортирует содержимое по возрастанию, а
+второй сделает наоборот.
+
+Стоит отметить, что функции разбиения на страницы и сортировки могут без проблем сосуществовать;
+разумеется, всякий раз, когда мы пытаемся изменить сортировку таблицы, подкачка просто откатывается назад.
+на первую страницу.
+
+Теперь, когда сортировка реализована, осталась только одна недостающая функция: фильтрация.
+
+# Добавление фильтрации
+Если мы думаем, что нам удастся обойтись другим компонентом, на этот раз мы будем разочарованы: Angular Material не предоставляет специального модуля, который можно было бы использовать для целей фильтрации. Этот
+означает, что мы не можем полагаться на стандартный подход для добавления фильтрации в нашу таблицу; мы должны выяснить
+разумный подход самостоятельно.
+В общих чертах, лучшее, что можно сделать всякий раз, когда нам нужно написать код функции самостоятельно, — это начать
+визуализируем то, как мы хотим, чтобы оно выглядело: например, мы можем представить поле ввода «Поиск», лежащее поверх
+нашу таблицу, которая заставит наш CitiesComponent перезагрузить данные городов с сервера – через
+его метод getData() — всякий раз, когда мы что-то в него вводим. Как это звучит?
+
+Попробуем составить план действий:
+1. Как всегда, нам нужно расширить наш класс ApiResult, чтобы программно обрабатывать фильтрацию.
+задача на стороне сервера
+2. Нам также потребуется изменить сигнатуру метода действия GetCities() нашего .NET.
+CitiesController, чтобы мы могли получить дополнительную информацию от клиента.
+3. Сразу после этого нам нужно будет реализовать логику фильтрации в нашем Angular CitiesComponent.
+4. В конце концов нам нужно будет добавить текстовое поле ввода в HTML-файл шаблона CitiesComponent.
+и привязать к нему событие, чтобы запустить процесс получения данных при вводе чего-либо
+5. Прежде чем двигаться дальше, мы поговорим о влиянии наших решений на производительность.
+функция фильтрации и как мы можем ее решить
+Теперь, когда мы это сделали, давайте сделаем все возможное, чтобы воплотить этот план в жизнь.
+
+# Расширение ApiResult (снова)
+Похоже, нам нужно выполнить еще одно обновление нашего любимого класса ApiResult, чтобы добавить фильтрацию.
+поддержка уже существующей логики разбиения на страницы и сортировки.
+По правде говоря, нас не заставляют делать все в классе ApiResult: мы можем пропустить эту часть.
+полностью и просто добавьте следующее в наш существующий CitiesController:
+
+```Csharp
+[HttpGet]
+public async Task<ActionResult<ApiResult<City>>> GetCities(
+ int pageIndex = 0,
+ int pageSize = 10,
+ string? sortColumn = null,
+ string? sortOrder = null,
+ string? filterColumn = null,
+ string? filterQuery = null)
+{
+ // first we perform the filtering...
+ var cities = _context.Cities;
+ if (!string.IsNullOrEmpty(filterColumn)
+ && !string.IsNullOrEmpty(filterQuery))
+ {
+ cities= cities.Where(c => c.Name.StartsWith(filterQuery));
+ }
+ // ... and then we call the ApiResult
+ return await ApiResult<City>.CreateAsync(
+ cities,
+pageIndex,
+ pageSize,
+ sortColumn,
+ sortOrder);
+}
+```
+Это определенно жизнеспособный подход. На самом деле, если бы мы не использовали System.Linq.Dynamic.
+Базовая библиотека пакетов, скорее всего, это будет единственно возможный подход; у нас не было бы возможности
+программно установить фильтр столбца, используя внешний класс, который работает с универсальным IQueryable<T>
+объекты, поскольку такой класс не будет знать о типе сущности и именах свойств.
+К счастью, у нас есть этот пакет, поэтому мы можем избежать выполнения предыдущих изменений (или
+откатите их, если мы это уже сделали) и измените наш файл класса /Data/ApiResult.cs в
+вместо этого следующим образом:
+
+```Csharp
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Dynamic.Core;
+using System.Reflection;
+namespace WorldCitiesAPI.Data
+{
+ public class ApiResult<T>
+ {
+ /// <summary>
+ /// Private constructor called by the CreateAsync method.
+ /// </summary>
+ private ApiResult(
+ List<T> data,
+ int count,
+ int pageIndex,
+ int pageSize,
+ string? sortColumn,
+ string? sortOrder,
+ string? filterColumn,
+ string? filterQuery)
+ {
+ Data = data;
+ PageIndex = pageIndex;
+ PageSize = pageSize;
+ TotalCount = count;
+TotalPages = (int)Math.Ceiling(count / (double)pageSize);
+ SortColumn = sortColumn;
+ SortOrder = sortOrder;
+ FilterColumn = filterColumn;
+ FilterQuery = filterQuery;
+ }
+ #region Methods
+ /// <summary>
+ /// Pages, sorts and/or filters a IQueryable source.
+ /// </summary>
+ /// <param name="source">An IQueryable source of generic
+ /// type</param>
+ /// <param name="pageIndex">Zero-based current page index
+ /// (0 = first page)</param>
+ /// <param name="pageSize">The actual size of
+ /// each page</param>
+ /// <param name="sortColumn">The sorting column name</param>
+ /// <param name="sortOrder">The sorting order ("ASC" or
+ /// "DESC")</param>
+ /// <param name="filterColumn">The filtering column
+ /// name</param>
+ /// <param name="filterQuery">The filtering query (value to
+ /// lookup)</param>
+ /// <returns>
+ /// A object containing the IQueryable paged/sorted/filtered
+ /// result
+ /// and all the relevant paging/sorting/filtering navigation
+ /// info.
+ /// </returns>
+ public static async Task<ApiResult<T>> CreateAsync(
+ IQueryable<T> source,
+ int pageIndex,
+ int pageSize,
+ string? sortColumn = null,
+ string? sortOrder = null,
+ string? filterColumn = null,
+ string? filterQuery = null)
+ {
+ if (!string.IsNullOrEmpty(filterColumn)
+ && !string.IsNullOrEmpty(filterQuery)
+&& IsValidProperty(filterColumn))
+ {
+ source = source.Where(
+ string.Format("{0}.StartsWith(@0)",
+ filterColumn),
+ filterQuery);
+ }
+ var count = await source.CountAsync();
+ if (!string.IsNullOrEmpty(sortColumn)
+ && IsValidProperty(sortColumn))
+ {
+ sortOrder = !string.IsNullOrEmpty(sortOrder)
+ && sortOrder.ToUpper() == "ASC"
+ ? "ASC"
+ : "DESC";
+ source = source.OrderBy(
+ string.Format(
+ "{0} {1}",
+ sortColumn,
+ sortOrder)
+ );
+ }
+ source = source
+ .Skip(pageIndex * pageSize)
+ .Take(pageSize);
+ var data = await source.ToListAsync();
+
+ return new ApiResult<T>(
+ data,
+ count,
+ pageIndex,
+ pageSize,
+ sortColumn,
+ sortOrder,
+ filterColumn,
+ filterQuery);
+ }
+/// <summary>
+ /// Checks if the given property name exists
+ /// to protect against SQL injection attacks
+ /// </summary>
+ public static bool IsValidProperty(
+ string propertyName,
+ bool throwExceptionIfNotFound = true)
+ {
+ var prop = typeof(T).GetProperty(
+ propertyName,
+ BindingFlags.IgnoreCase |
+ BindingFlags.Public |
+ BindingFlags.Static |
+ BindingFlags.Instance);
+ if (prop == null && throwExceptionIfNotFound)
+ throw new NotSupportedException($"ERROR: Property
+'{propertyName}' does not exist.");
+ return prop != null;
+ }
+ #endregion
+ #region Properties
+ /// <summary>
+ /// IQueryable data result to return.
+ /// </summary>
+ public List<T> Data { get; private set; }
+ /// <summary>
+ /// Zero-based index of current page.
+ /// </summary>
+ public int PageIndex { get; private set; }
+ /// <summary>
+ /// Number of items contained in each page.
+ /// </summary>
+ public int PageSize { get; private set; }
+ /// <summary>
+ /// Total items count
+/// </summary>
+ public int TotalCount { get; private set; }
+ /// <summary>
+ /// Total pages count
+ /// </summary>
+ public int TotalPages { get; private set; }
+ /// <summary>
+ /// TRUE if the current page has a previous page,
+ /// FALSE otherwise.
+ /// </summary>
+ public bool HasPreviousPage
+ {
+ get
+ {
+ return (PageIndex > 0);
+ }
+ }
+ /// <summary>
+ /// TRUE if the current page has a next page, FALSE otherwise.
+ /// </summary>
+ public bool HasNextPage
+ {
+ get
+ {
+ return ((PageIndex +1) < TotalPages);
+ }
+ }
+ /// <summary>
+ /// Sorting Column name (or null if none set)
+ /// </summary>
+ public string? SortColumn { get; set; }
+ /// <summary>
+ /// Sorting Order ("ASC", "DESC" or null if none set)
+ /// </summary>
+ public string? SortOrder { get; set; }
+/// <summary>
+ /// Filter Column name (or null if none set)
+ /// </summary>
+ public string? FilterColumn { get; set; }
+ /// <summary>
+ /// Filter Query string
+ /// (to be used within the given FilterColumn)
+ /// </summary>
+ public string? FilterQuery { get; set; }
+ #endregion
+ }
+}
+```
+
+Вот и все. Как мы видим, нам удалось программно реализовать IQueryable<T>.Where().
+метод, который фактически выполняет задачу фильтрации, благодаря другому полезному методу расширения.
+предоставляется пакетом System.Linq.Dynamic.Core.
+Излишне говорить, что мы снова воспользовались возможностью использовать метод IsValidProperty, чтобы защитить наш код.
+против возможных попыток внедрения SQL: логика, связанная с фильтрацией (и динамический запрос LINQ), будет
+выполняться только в том случае, если он возвращает True, то есть если значение параметра filterColumn соответствует существующему
+общественная собственность субъекта.
+Пока мы были там, мы также добавили два дополнительных свойства (FilterColumn и FilterQuery), поэтому
+что мы разместим их в объекте ответа JSON, и изменили сигнатуру метода конструктора.
+соответственно.
+
+# CitiesController
+Теперь мы можем открыть файл /Controllers/CitiesController.cs и внести следующие изменения:
+
+```Csharp
+[HttpGet]
+public async Task<ActionResult<ApiResult<City>>> GetCities(
+ int pageIndex = 0,
+ int pageSize = 10,
+ string? sortColumn = null,
+ string? sortOrder = null,
+ string? filterColumn = null,
+ string? filterQuery = null)
+{
+ return await ApiResult<City>.CreateAsync(
+ _context.Cities.AsNoTracking(),
+ pageIndex,
+ pageSize,
+ sortColumn,
+sortOrder,
+ filterColumn,
+ filterQuery);
+}
+```
+Приведенный выше код очень похож на альтернативную реализацию, которую мы предполагали в предыдущем примере.
+раздел; как мы упоминали ранее, оба подхода жизнеспособны, в зависимости от наших вкусов. Однако, поскольку
+мы собираемся использовать эту же реализацию для стран в ближайшее время, эффективно используя
+System.Linq.Dynamic.Core и централизация всей логики IQueryable, возможно, является лучшим подходом.
+поскольку он сохраняет наш исходный код максимально СУХИМ.
+
+Часть .NET готова; давайте перейдем к Angular.
+
+# CitiesComponent
+Откройте файл /src/app/cities/cities.comComponent.ts и обновите его содержимое следующим образом.
+(измененные строки выделены):
+
+```ts
+import { Component, OnInit, ViewChild } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { environment } from '../../environment';
+import { MatTableDataSource } from '@angular/material/table';
+import { MatPaginator, PageEvent } from '@angular/material/paginator';
+import { MatSort } from '@angular/material/sort';
+import { City } from './city';
+@Component({
+ selector: 'app-cities',
+ templateUrl: './cities.component.html',
+ styleUrls: ['./cities.component.scss']
+})
+export class CitiesComponent implements OnInit {
+ public displayedColumns: string[] = ['id', 'name', 'lat', 'lon'];
+ public cities!: MatTableDataSource<City>;
+ defaultPageIndex: number = 0;
+ defaultPageSize: number = 10;
+ public defaultSortColumn: string = "name";
+ public defaultSortOrder: "asc" | "desc" = "asc";
+ defaultFilterColumn: string = "name";
+ filterQuery?:string;
+ @ViewChild(MatPaginator) paginator!: MatPaginator;
+ @ViewChild(MatSort) sort!: MatSort;
+ constructor(private http: HttpClient) {
+ }
+ ngOnInit() {
+ this.loadData(null);
+ }
+ loadData(query?: string) {
+ var pageEvent = new PageEvent();
+ pageEvent.pageIndex = this.defaultPageIndex;
+ pageEvent.pageSize = this.defaultPageSize;
+ this.filterQuery = query;
+ this.getData(pageEvent);
+ }
+ getData(event: PageEvent) {
+ var url = environment.baseUrl + 'api/Cities';
+ var params = new HttpParams()
+ .set("pageIndex", event.pageIndex.toString())
+ .set("pageSize", event.pageSize.toString())
+ .set("sortColumn", (this.sort)
+ ? this.sort.active
+ : this.defaultSortColumn)
+ .set("sortOrder", (this.sort)
+ ? this.sort.direction
+ : this.defaultSortOrder);
+ if (this.filterQuery) {
+ params = params
+ .set("filterColumn", this.defaultFilterColumn)
+ .set("filterQuery", this.filterQuery);
+ }
+this.http.get<any>(url, { params })
+ .subscribe(result => {
+ this.paginator.length = result.totalCount;
+ this.paginator.pageIndex = result.pageIndex;
+ this.paginator.pageSize = result.pageSize;
+ this.cities = new MatTableDataSource<City>(result.data);
+ }, error => console.error(error));
+ }
+}
+```
+На этот раз новый код состоит всего из нескольких дополнительных строк; мы только что изменили подпись
+loadData() (с типом string? необязательным, чтобы ничего не сломать) и условно
+добавили пару параметров в наш HTTP-запрос — всё.
+
+# Файл шаблона CitiesComponent (HTML)
+Давайте посмотрим, что нам нужно добавить в файл шаблона /src/app/cities/cities.comComponent.html:
+
+```html
+<h1>Cities</h1>
+<p>Here's a list of cities: feel free to play with it.</p>
+<p *ngIf="!cities"><em>Loading...</em></p>
+<mat-form-field [hidden]="!cities">
+ <input matInput #filter (keyup)="loadData(filter.value)"
+ placeholder="Filter by name (or part of it)...">
+</mat-form-field>
+<table mat-table [dataSource]="cities"
+ class="mat-elevation-z8"
+ [hidden]="!cities"
+ matSort (matSortChange)="loadData()"
+ [matSortActive]="defaultSortColumn"
+ [matSortDirection]="defaultSortOrder">
+
+```
+
+Как мы видим, мы только что добавили элемент <mat-form-field> с обычной привязкой атрибута [скрытый]
+(чтобы оно появлялось только после загрузки наших городов) и привязку события (keyup), которая запускает
+метод loadData() при каждом нажатии клавиши; этот вызов также будет содержать входное значение, которое будет
+обрабатывается нашим классом компонента средствами, которые мы только что там реализовали.
+
+Единственное, что стоит отметить, это то, что мы представили новую функцию Angular в приведенном выше коде: ссылочную переменную шаблона (#filter), которая позволяет нам использовать данные из одного элемента в другой части.
+шаблона. Мы сделали это для того, чтобы передать обновленное значение элемента MatInput нашему
+метод ЗагрузитьДанные().
+
+Теоретически мы могли бы использовать $event.target.value вместо того, чтобы полагаться на
+в ссылочной переменной шаблона: однако мы будем использовать этот #filter в дальнейшем в
+следующих главах, поэтому мы воспользовались возможностью представить его сейчас.
+
+# CitiesComponent style (SCSS) file
+Прежде чем тестировать его, нам нужно внести небольшие изменения в компонент /src/app/cities/cities.comment.
+scss-файл:
+
+```scss
+table.mat-table {
+ width: 100%;
+}
+.mat-form-field {
+ font-size: 14px;
+ width: 100%;
+}
+```
+Это необходимо для того, чтобы наш новый MatInputModule охватывал все доступное пространство (оно ограничено).
+по умолчанию до 180 пикселей).
+
+# Модуль AngularMaterialModule
+Подождите: мы только что сказали MatInputModule? Это верно: на самом деле кажется, что мы
+в конце концов, мы действительно использовали модуль Angular Material в нашей реализации фильтрации – и навсегда
+Причина в том, что оно выглядит намного лучше, чем обычное текстовое поле ввода HTML!
+Однако, поскольку мы это сделали, нам нужно ссылаться на него в нашем контейнере AngularMaterialModule или
+мы получим ошибку компилятора. Для этого откройте файл /src/app/angular-material.module.ts и добавьте
+необходимое заявление об импорте…
+
+```ts
+import { MatInputModule } from '@angular/material/input';
+```
+и две ссылки в массивах импорта и экспорта @NgModule.
+
+Вот и все: теперь мы можем нажать F5 и перейти к представлению «Города», чтобы протестировать новую функцию фильтрации. Если бы мы сделали
+все правильно, мы должны увидеть что-то похожее на следующий снимок экрана:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/227a6cf5-cfdf-4003-8091-1355952f1b13)
+
+Если мы попытаемся ввести что-то в текстовое поле фильтра, мы должны увидеть таблицу и обновление пагинатора.
+соответственно в реальном времени. Посмотрите, что произойдет, если мы введем Нью-Йорк в текстовое поле фильтра:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/3eac6271-fa19-4a15-a53a-faf69adaab04)
+
+Это определенно хорошая функция фильтрации в реальном времени.
+
+# Вопросы производительности
+Прежде чем двигаться дальше, было бы разумно потратить несколько минут на обсуждение влияния на производительность.
+фильтра, который мы только что реализовали.
+Как мы видим, вызов метода loadData напрямую связан с событием keyup ввода HTML:
+это означает, что он будет срабатывать при нажатии клавиши каждым пользователем. Это здорово с точки зрения пользовательского опыта, потому что
+наши пользователи сразу же получат отфильтрованные данные по мере их ввода; однако этот фильтр реального времени также имеет
+серьезный недостаток с точки зрения влияния на производительность: каждый раз, когда текст фильтра меняется (т. е. при
+каждое нажатие клавиши), Angular отправляет HTTP-запрос на серверную часть для получения обновленного списка результатов.
+Такое поведение по своей сути является ресурсоемким и может легко стать огромной проблемой производительности.
+особенно если мы имеем дело с большими таблицами и/или неиндексированными столбцами.
+Есть ли способы улучшить этот подход без ущерба для результатов, полученных с точки зрения пользователя?
+опыт? По сути, ответ — да, но мы сейчас этого делать не будем: поговорим об этом подробнее.
+в главе 7 «Формы и проверка данных», когда мы знакомим с понятиями устранения дребезга и регулирования.
+
+# Добавление стран в цикл
+Прежде чем двигаться дальше, как насчет того, чтобы ввести страны в курс дела? Да, это означало бы переделывать все, что мы только что сделали, во второй раз; однако теперь, когда мы знаем, как это сделать, возможно, мы будем
+способен сделать это в мгновение ока... а может и нет.
+
+Тем не менее, нам определенно следует потратить на это разумное количество времени сейчас, потому что это
+будет отличным способом закрепить все, что мы узнали до сих пор, в нашей мышечной памяти.
+Давайте сделаем это сейчас, чтобы мы могли перейти к чему-то еще. Чтобы не тратить страницы зря, мы просто
+сосредоточьтесь здесь на наиболее важных шагах, оставив все остальное тому, что мы только что сделали с городами – и
+в наш репозиторий GitHub, где находится полный исходный код того, что нам нужно сделать.
+
+# ASP.NET
+Начнем с части ASP.NET.
+
+# CountriesController
+У нас уже должен быть готов наш CountryController из главы 5 «Модель данных с Entity Framework Core», верно? Откройте этот файл и замените метод действия GetCountries() по умолчанию следующим кодом:
+
+```Csharp
+[HttpGet]
+public async Task<ActionResult<ApiResult<Country>>> GetCountries(
+ int pageIndex = 0,
+ int pageSize = 10,
+ string? sortColumn = null,
+ string? sortOrder = null,
+ string? filterColumn = null,
+ string? filterQuery = null)
+{
+ return await ApiResult<Country>.CreateAsync(
+ _context.Countries.AsNoTracking(),
+ pageIndex,
+ pageSize,
+ sortColumn,
+ sortOrder,
+ filterColumn,
+ filterQuery);
+}
+```
+К счастью, наш класс ApiResult не зависит от типа; следовательно, мы можем использовать его там без проблем.
+Кроме того, поскольку мы централизовали всю тяжелую работу, серверная часть .NET уже выполнена.
+
+# Странная проблема с именованием JSON
+Прежде чем двигаться дальше, давайте быстро протестируем компонент: нажмите F5 и введите следующий URL-адрес в поле браузера.
+адресная строка: https://localhost:40443/api/Countries/?pageIndex=0&pageSize=5.
+Как только мы нажмем Enter, мы увидим следующий интерфейс:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/1f9d1bda-582a-4fea-8003-7499107b4e42)
+
+Кажется, все это г... Эй, подожди: что случилось с этими именами свойств isO2 и isO3? Они
+не следует так писать с большой буквы!
+Чтобы понять, что там произошло, нам нужно сделать шаг назад и кое-что признать.
+мы, возможно, до сих пор недооценили: преобразование CamelCase, которое совершенно новый System.Text.Json
+API (представленный в .NET Core 3) автоматически делает это при сериализации всех наших классов .NET в JSON.
+Мы уже говорили об этой проблеме в начале этой главы, когда видели .NET CitiesController.
+JSON выводится впервые, и мы сказали, что это не имеет большого значения, поскольку Angular также ориентирован на CamelCase — нам просто нужно будет также определить различные интерфейсы с использованием CamelCase.
+К сожалению, такое автоматическое преобразование в CamelCase может вызвать нежелательные побочные эффекты при работе с
+со свойствами, написанными только заглавными буквами, такими как эти два; всякий раз, когда это происходит, нам нужно адаптировать наш источник
+код, чтобы правильно справиться с этим:
+- Самым очевидным решением было бы просто определить их в интерфейсе Angular в точном
+таким же образом, то есть с использованием именно этого регистра; однако это означало бы иметь дело с этими isO2
+и имена переменных isO3 во всем нашем коде Angular, что довольно уродливо и может
+также может ввести в заблуждение.
+- Если мы не хотим использовать эти отвратительные имена свойств, есть альтернативный – и, возможно, лучший – обходной путь, который мы можем использовать: мы можем украсить наши оскорбительные свойства с помощью
+аннотация данных [JsonPropertyName], которая позволяет нам принудительно указывать имя свойства JSON независимо от соглашения о регистре по умолчанию (будь то CamelCase или PascalCase), указанного в
+Стартап-класс.
+Обходной путь [JsonPropertyName] кажется наиболее разумным решением, которое мы можем применить к нашим конкретным
+сценарий; давайте просто согласимся и избавимся от этой проблемы навсегда!
+Откройте файл /Data/Models/Country.cs и добавьте следующие строки в существующий код (новые строки
+выделены):
+
+```Csharp
+/// <summary>
+/// Country code (in ISO 3166-1 ALPHA-2 format)
+/// </summary>
+[JsonPropertyName("iso2")]
+public string ISO2 { get; set; }
+/// <summary>
+/// Country code (in ISO 3166-1 ALPHA-3 format)
+/// </summary>
+[JsonPropertyName("iso3")]
+public string ISO3 { get; set; }
+```
+Атрибут [JsonPropertyName] требует наличия следующей ссылки в верхней части файла:
+
+```Csharp
+using System.Text.Json.Serialization;
+```
+Теперь мы можем увидеть, будут ли эти свойства учитывать такое поведение, нажав F5 и набрав то же самое.
+URL-адрес, как и раньше, в адресную строку браузера: https://localhost:40443/api/Countries/?pageInd
+ex=0&pageSize=5
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/bfadc22d-98f6-4617-bc51-4ebbcc9575e8)
+
+Кажется, так оно и есть; благодаря этой неожиданной проблеме у нас появилась возможность добавить мощный
+новое оружие в нашем арсенале ASP.NET.
+Теперь нам просто нужно создать и настроить компонент Angular.
+
+# Angular
+Реализация Angular будет менее простой, чем реализация ASP.NET, поскольку нам придется
+иметь дело с несколькими аспектами:
+- Создание нового компонента Countrys.
+- Реализация таблицы «Страны», а также функций разбиения на страницы, сортировки и фильтрации, как мы
+сделал с городами
+- Обновление NavComponent для добавления навигационной ссылки.
+
+Мы уже знаем, что нам нужно делать, поскольку только что сделали это с нашим CitiesComponent.
+1. Откройте командную строку.
+2. Перейдите в папку /src/app/.
+3. Введите nggenerateComponentCountries --module=app --skip-tests, чтобы создать ts, html,
+и scss-файлы, а также новую папку /src/app/countries/.
+4. В обозревателе решений создайте дополнительный файл Country.ts внутри каталога /src/app/countries/.
+папка проекта WorldCities
+После этого заполните новые файлы следующим содержимым.
+
+# country.ts
+Вот исходный код файла интерфейса /src/app/countries/country.ts:
+
+```ts
+export interface Country {
+ id: number;
+ name: string;
+ iso2: string;
+ iso3: string;
+}
+```
+Здесь нет ничего нового — код очень похож на тот, что мы делали, когда создавали файл интерфейса city.ts.
+
+# countries.component.ts
+Вот исходный код файла /src/app/countries/countries.comComponent.ts:
+
+```ts
+import { Component, OnInit, ViewChild } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { environment } from './../../environments/environment';
+import { MatTableDataSource } from '@angular/material/table';
+import { MatPaginator, PageEvent } from '@angular/material/paginator';
+import { MatSort } from '@angular/material/sort';
+import { Country } from './country';
+@Component({
+selector: 'app-countries',
+templateUrl: './countries.component.html',
+styleUrls: ['./countries.component.scss']
+})
+export class CountriesComponent implements OnInit {
+public displayedColumns: string[] = ['id', 'name', 'iso2', 'iso3'];
+public countries!: MatTableDataSource<Country>;
+defaultPageIndex: number = 0;
+defaultPageSize: number = 10;
+public defaultSortColumn: string = "name";
+public defaultSortOrder: "asc" | "desc" = "asc";
+defaultFilterColumn: string = "name";
+ filterQuery?: string;
+@ViewChild(MatPaginator) paginator!: MatPaginator;
+@ViewChild(MatSort) sort!: MatSort;
+constructor(private http: HttpClient) {
+ }
+ngOnInit() {
+ this.loadData();
+ }
+loadData(query?: string) {
+ var pageEvent = new PageEvent();
+ pageEvent.pageIndex = this.defaultPageIndex;
+ pageEvent.pageSize = this.defaultPageSize;
+ this.filterQuery = query;
+ this.getData(pageEvent);
+ }
+getData(event: PageEvent) {
+ var url = environment.baseUrl + 'api/Countries';
+ var params = new HttpParams()
+ .set("pageIndex", event.pageIndex.toString())
+ .set("pageSize", event.pageSize.toString())
+ .set("sortColumn", (this.sort)
+ ? this.sort.active
+ : this.defaultSortColumn)
+ .set("sortOrder", (this.sort)
+ ? this.sort.direction
+ : this.defaultSortOrder);
+ if (this.filterQuery) {
+ params = params
+ .set("filterColumn", this.defaultFilterColumn)
+ .set("filterQuery", this.filterQuery);
+}
+ this.http.get<any>(url, { params })
+ .subscribe(result => {
+ this.paginator.length = result.totalCount;
+ this.paginator.pageIndex = result.pageIndex;
+ this.paginator.pageSize = result.pageSize;
+ this.countries = new MatTableDataSource<Country>(result.data);
+ }, error => console.error(error));
+ }
+}
+```
+Опять же, это по сути зеркало файла city.commponent.ts.
+
+# countries.component.html
+Вот исходный код файла /src/app/countries/countries.comComponent.html:
+
+```html
+<h1>Countries</h1>
+<p>Here's a list of countries: feel free to play with it.</p>
+<p *ngIf="!countries"><em>Loading...</em></p>
+<mat-form-field [hidden]="!countries">
+ <input matInput #filter (keyup)="loadData(filter.value)"
+ placeholder="Filter by name (or part of it)...">
+</mat-form-field>
+<table mat-table [dataSource]="countries"
+ class="mat-elevation-z8"
+ [hidden]="!countries"
+ matSort (matSortChange)="loadData()"
+ [matSortActive]="defaultSortColumn"
+ [matSortDirection]="defaultSortOrder">
+ <!-- Id Column -->
+ <ng-container matColumnDef="id">
+ <th mat-header-cell *matHeaderCellDef mat-sort-header>ID</th>
+ <td mat-cell *matCellDef="let country"> {{country.id}} </td>
+ </ng-container>
+ <ng-container matColumnDef="name">
+ <th mat-header-cell *matHeaderCellDef mat-sort-header>Name</th>
+ <td mat-cell *matCellDef="let country"> {{country.name}} </td>
+ </ng-container>
+ <!-- ISO2 Column -->
+ <ng-container matColumnDef="iso2">
+ <th mat-header-cell *matHeaderCellDef mat-sort-header>ISO 2</th>
+ <td mat-cell *matCellDef="let country"> {{country.iso2}} </td>
+ </ng-container>
+ <!-- ISO3 Column -->
+ <ng-container matColumnDef="iso3">
+ <th mat-header-cell *matHeaderCellDef mat-sort-header>ISO 3</th>
+ <td mat-cell *matCellDef="let country"> {{country.iso3}} </td>
+ </ng-container>
+ <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+ <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+</table>
+<!-- Pagination directive -->
+<mat-paginator [hidden]="!countries"
+ (page)="getData($event)"
+ [pageSize]="10"
+ [pageSizeOptions]="[10, 20, 50]"
+ showFirstLastButtons></mat-paginator>
+```
+Шаблон, как и ожидалось, практически идентичен файлу шаблона города.компонент.html.
+
+# countries.component.scss
+Вот исходный код файла /src/app/countries/countries.comComponent.scss:
+
+```scss
+table.mat-table {
+ width: 100%;
+}
+.mat-form-field {
+ font-size: 14px;
+ width: 100%;
+}
+```
+Предыдущий файл настолько похож на файл city.comComponent.scss, что мы могли бы даже сослаться на него.
+вместо создания нового; однако работа с отдельными файлами почти всегда является лучшим выбором,
+учитывая, что нам, возможно, придется позже применить различные изменения к таблицам «Города» и «Страны».
+
+# AppModule
+Поскольку мы создали наш компонент с помощью Angular CLI, нам не нужно вносить какие-либо изменения в
+Конфигурационный файл AppModule, поскольку новый компонент должен был быть зарегистрирован автоматически:
+все, что нам нужно сделать, это обновить модуль маршрутизации и компонент навигации.
+
+# Модуль AppRoutingModule
+Правило маршрутизации, которое нам нужно добавить, очень похоже на то, которое мы недавно добавили в CitiesComponent:
+
+```ts
+import { NgModule } from '@angular/core';
+import { Routes, RouterModule } from '@angular/router';
+import { HomeComponent } from './home/home.component';
+import { CitiesComponent } from './cities/cities.component';
+import { CountriesComponent } from './countries/countries.component';
+const routes: Routes = [
+ { path: '', component: HomeComponent, pathMatch: 'full' },
+ { path: 'cities', component: CitiesComponent },
+ { path: 'countries', component: CountriesComponent }
+];
+@NgModule({
+ imports: [RouterModule.forRoot(routes)],
+ exports: [RouterModule]
+})
+export class AppRoutingModule { }
+```
+Новое правило маршрутизации позволит Angular обслуживать наш новый компонент CountrysComponent, когда клиент
+браузер указывает на выделенный маршрут /countries. Однако наши пользователи не будут знать, что такой маршрут
+существует, если мы не добавляем видимую ссылку на него в меню NavComponent; именно поэтому мы
+собираюсь добавить его дальше.
+
+# NavComponent
+Откройте файл /src/app/nav-menu/nav-menu.comComponent.html и добавьте следующие выделенные строки.
+к существующему коду:
+
+```html
+<header>
+ <mat-toolbar color="primary">
+ <button mat-icon-button [routerLink]="['/']">
+ <mat-icon>
+home
+ </mat-icon>
+ </button>
+ <a mat-flat-button color="primary" [routerLink]="['/cities']">
+ Cities
+ </a>
+ <a mat-flat-button color="primary" [routerLink]="['/countries']">
+ Countries
+ </a>
+ </mat-toolbar>
+</header>
+```
+вот и все!
+Наш CountryComponent готов, и – если мы не допустили ошибок – он должен работать примерно так же.
+как и наш любимый CitiesComponent, на доработку которого ушло так много времени.
+
+# Тестирования CountriesComponent
+
+Пришло время увидеть результаты нашей тяжелой работы: нажмите F5, перейдите к представлению «Страны» и ожидайте увидеть
+следующее:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/b72e3b70-0032-43de-b76f-940b1462963d)
+
+Если вам удалось получить тот же результат с первой попытки, это определенно означает, что вы научились
+что делать; если вы этого не сделали, не волнуйтесь: вам просто нужно будет проверить, что вы сделали не так, и исправить это. Упражняться
+делает совершенным.
+ВАЖНО: Не обманывайтесь внешностью; обязательно проверьте, что разбиение по страницам, сортировка и фильтрация включены.
+работать должным образом, прежде чем идти дальше.
+
+Журнал консоли браузера может быть очень полезным инструментом для отладки ошибок на стороне сервера и клиента; большинство ошибок Angular сопровождаются хорошо документированным текстом исключения и
+контекстная ссылка на соответствующий файл и строку исходного кода, что упрощает задачу
+чтобы разработчик мог понять, что происходит под капотом.
+
+# Краткое содержание
+В этой главе речь шла о чтении данных из серверной части ASP.NET и поиске способа правильного отображения данных.
+его в браузер с интерфейсом Angular.
+Мы начали с использования существующего CitiesController для получения большого количества городов с помощью Angular.
+компоненты; хотя обе платформы прекрасно справляются с большими объемами данных, мы быстро поняли, что нам необходимо улучшить весь процесс запроса, ответа и рендеринга данных, чтобы предоставить
+нашим пользователям достойный пользовательский опыт.
+Именно по этой причине мы решили использовать пакет System.Linq.Dynamic.Core .NET для обновления нашего
+серверная бизнес-логика и пакет Angular Material npm, которые значительно улучшают наш клиентский пользовательский интерфейс.
+Объединив мощные возможности этих двух пакетов, нам удалось реализовать множество интересных
+функции: пейджинг, сортировка и фильтрация. В процессе разработки мы также воспользовались возможностью
+выявлять, устранять и смягчать некоторые важные проблемы безопасности, такие как риск вредоносного внедрения SQL.
+Сразу после завершения работы с городами мы перешли к странам, воспользовавшись возможностью проследить
+наши шаги и закрепляют то, что мы только что узнали, в нашей мышечной памяти.
+После всей нашей тяжелой работы мы можем с уверенностью сказать, что мы проделали большую работу и выполнили свою цель: сумев
+читать наши данные из серверной части .NET и корректно представлять их через интерфейс с помощью Angular,
+таким образом, давая конечным пользователям полную возможность видеть его и взаимодействовать с ним.
+Теперь мы готовы добавить в наше приложение еще один уровень сложности: дать нашим пользователям возможность
+изменять существующие данные и/или добавлять новые данные с помощью HTML-форм; эти функции необходимы для
+большинство интерактивных веб-приложений, таких как CMS, форумы, социальные сети, чаты и т.п.
+В следующей главе, главе 7, «Формы и проверка данных», мы увидим, как мы можем решать такие задачи.
+использование реактивных форм, основного модуля Angular, который обеспечивает управляемый моделью подход к обработке
+формируют входные данные, значения которых меняются со временем.
+
+# Предлагаемые темы
+Для получения дополнительной информации мы рекомендуем следующие темы: JSON, соглашения RESTful, команды HTTP,
+Статус HTTP, перехватчики жизненного цикла, подкачка на стороне клиента, подкачка на стороне сервера, сортировка, фильтрация, зависимости
+инъекция и SQL-инъекция.
+
+## ASP.NET
+System.Linq, System.Linq.Dynamic.Core, IQueryable, and Entity Framework Core.
+
+## Angular
+Components, routing, modules, AppModule, HttpClient, ngIf, hidden, data binding, property binding,
+attribute binding, ngFor, directives, structural directives, interpolations, templates, and template
+reference variables.
+
+
 
 
 
