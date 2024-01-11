@@ -442,6 +442,1794 @@ Core Identity предоставляет некоторые типы Common Lang
 В обозревателе решений перейдите в папку /Data/Models/ и создайте нового пользователя ApplicationUser.
 cs и заполните его содержимое следующим кодом:
 
+```Csharp
+using Microsoft.AspNetCore.Identity;
+namespace WorldCitiesAPI.Data.Models
+{
+public class ApplicationUser : IdentityUser
+ {
+ }
+}
+```
+Как мы видим, нам не нужно ничего там реализовывать, по крайней мере, пока; мы просто
+расширим базовый класс IdentityUser, который уже содержит все, что нам сейчас нужно.
+
+# Расширение ApplicationDbContext
+Для поддержки механизма аутентификации .NET Core наш существующий ApplicationDbContext
+необходимо расширить из другого базового класса абстракции базы данных, поддерживающего ASP.NET Core.
+Личность.
+Откройте файл /Data/ApplicationDbContext.cs и соответствующим образом обновите его содержимое (обновленные строки
+выделены):
+
+```Csharp
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using WorldCitiesAPI.Data.Models;
+namespace WorldCitiesAPI.Data
+{
+ public class ApplicationDbContext
+ : IdentityDbContext<ApplicationUser>
+ {
+```
+Как видно из предыдущего кода, мы заменили текущий базовый класс DbContext новым.
+базовый класс IdentityDbContext; новый класс сильно зависит от службы идентификации ASP.NET Core.
+мы собираемся добавить.
+
+# Настройка службы идентификации ASP.NET Core.
+Теперь, когда мы выполнили все необходимые условия, мы можем открыть файл Program.cs и добавить следующее:
+выделенные строки для настройки служб, необходимых системе ASP.NET Core Identity:
+
+```Csharp
+using WorldCitiesAPI.Data.Models;
+using Microsoft.AspNetCore.Identity;
+// Add ApplicationDbContext and SQL Server support
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+ options.UseSqlServer(
+ builder.Configuration.GetConnectionString("DefaultConnection")
+ )
+);
+// ...existing code...
+// Add ASP.NET Core Identity support
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+{
+ options.SignIn.RequireConfirmedAccount = true;
+ options.Password.RequireDigit = true;
+ options.Password.RequireLowercase = true;
+ options.Password.RequireUppercase = true;
+ options.Password.RequireNonAlphanumeric = true;
+ options.Password.RequiredLength = 8;
+})
+ .AddEntityFrameworkStores<ApplicationDbContext>();
+```
+
+Приведенный выше код во многом напоминает реализацию ASP.NET Core Identity по умолчанию, используемую большинством
+Шаблоны Visual Studio ASP.NET Core. Короче говоря, мы добавляем службу идентификации ASP.NET для
+указанные типы пользователей и ролей. Находясь там, мы воспользовались возможностью переопределить некоторые параметры политики паролей по умолчанию, чтобы продемонстрировать, как мы можем настроить службу идентификации так, чтобы она лучше соответствовала нашим потребностям.
+Давайте еще раз взглянем на предыдущий код, подчеркнув изменения (выделенные строки):
+
+```Csharp
+options.SignIn.RequireConfirmedAccount = true;
+options.Password.RequireLowercase = true;
+options.Password.RequireUppercase = true;
+options.Password.RequireDigit = true;
+options.Password.RequireNonAlphanumeric = true;
+options.Password.RequiredLength = 8;
+```
+
+Эти изменения не изменяют настройки RequireConfirmedAccount по умолчанию, для которых потребуется
+подтвержденную учетную запись пользователя (подтвержденную по электронной почте) для входа в систему. Вместо этого мы явно установили нашу
+требования к надежности пароля, чтобы пароли всех наших пользователей имели следующее:
+- Хотя бы одна строчная буква.
+- Не менее одной заглавной буквы
+- Хотя бы одна цифра
+- Хотя бы один небуквенно-цифровой символ.
+- Минимальная длина — восемь символов.
+
+Это обеспечит нашему приложению достойный уровень безопасности аутентификации, если мы когда-нибудь захотим сделать его общедоступным в Интернете. Излишне говорить, что мы можем изменить эти настройки в зависимости от наших конкретных
+потребности; образец разработки, вероятно, мог бы жить с более мягкими настройками, пока мы не сделаем
+оно доступно публике.
+
+Стоит отметить, что предыдущий код также потребует использования ссылок на
+новые пакеты, связанные с идентификацией, которые мы установили минуту назад, и в пространство имен, которое
+мы использовали для наших моделей данных, поскольку теперь мы ссылаемся на класс ApplicationUser.
+
+Теперь, когда мы правильно настроили службу ASP.NET Core Identity в нашем классе Program, мы можем добавить
+необходимый код для обработки реальных попыток входа в систему, исходящих от нашего клиента Angular.
+Реализация AccountController
+Основываясь на том, что мы узнали из предыдущих глав, мы уже знаем, что наше приложение Angular будет
+обрабатывать попытки аутентификации конечного пользователя с помощью формы входа; такая форма, скорее всего, выдаст HTTP
+POST-запрос к нашему веб-API ASP.NET Core, содержащий имя пользователя и пароль конечного пользователя. С
+мы реализуем механизм аутентификации на основе JWT, нам нужно выполнить следующее
+шаги на стороне сервера:
+- Проверьте имя пользователя и пароль во внутренней базе данных пользователей.
+- Создайте веб-токен JSON (далее именуемый JWT), если указанные учетные данные действительны.
+- Возвращает результат JSON, содержащий JWT или читаемую клиентом ошибку, в зависимости от имени входа.
+результат попытки
+Эти задачи можно выполнить с помощью специального контроллера, который нам нужно добавить в наш текущий WorldCitiesAPI.
+проект. Однако прежде чем добавлять этот контроллер, нам нужно создать несколько служебных классов, которые будут служить
+как предпосылки для выполнения этих задач.
+
+# Запрос на вход
+Первый класс, который мы собираемся добавить, — это DTO, который мы будем использовать для получения учетных данных пользователя из
+клиент. Мы уже знаем, почему нам нужен DTO, чтобы лучше справляться с такого рода задачами, из главы 9 «Внутренняя и интерфейсная отладка», верно? Мы уже сделали это для наших объектов «Город» и «Страна», а теперь ApplicationUser тоже нуждается в этом. Однако, поскольку мы собираемся использовать этот класс только для обработки входа в систему
+запросов, называть его ApplicationUserDTO было бы довольно запутанно: именно по этой причине мы просто
+назовите его LoginRequest, что лучше всего отражает нашу ограниченную цель.
+Создайте новый файл в папке /Data/, назовите его LoginRequest.cs и заполните его следующим кодом:
+
+```Csharp
+using System.ComponentModel.DataAnnotations;
+namespace WorldCitiesAPI.Data
+{
+ public class LoginRequest
+ {
+ [Required(ErrorMessage = "Email is required.")]
+ public string Email { get; set; } = null!;
+ [Required(ErrorMessage = "Password is required.")]
+ public string Password { get; set; } = null!;
+ }
+}
+```
+На этом этапе предыдущий код не требует пояснений: давайте двигаться дальше.
+
+# Результат входа в систему
+Следующее, что нужно сделать, — это создать строго типизированный класс результатов, чтобы информировать нашего клиента о попытке входа в систему.
+результат и в случае успеха отправить ему JWT: назовем его LoginResult, так как это именно
+что это.
+
+Стоит отметить, что мы не можем использовать для этой цели существующий класс ApiResult, поскольку он
+предназначен для хранения массива результатов.
+
+Создайте новый файл в папке /Data/, назовите его LoginResult.cs и заполните его следующим кодом:
+
+```Csharp
+namespace WorldCitiesAPI.Data
+{
+ public class LoginResult
+ {
+ /// <summary>
+ /// TRUE if the login attempt is successful, FALSE otherwise.
+ /// </summary>
+ public bool Success { get; set; }
+ /// <summary>
+ /// Login attempt result message
+ /// </summary>
+ public string Message { get; set; } = null!;
+ /// <summary>
+ /// The JWT token if the login attempt is successful, or NULL if not
+ /// </summary>
+ public string? Token { get; set; }
+ }
+}
+```
+Опять же, об этом классе сказать особо нечего: предоставленные комментарии должны все объяснить.
+Теперь нам просто нужно сгенерировать наш JWT.
+JwtНастройки
+Чтобы безопасно сгенерировать JWT, нам необходимо заранее знать некоторую информацию, например:
+- Ключ безопасности для создания токена.
+- Идентификация эмитента (сервера, генерирующего токен) и аудитории (клиентов).
+кто его получит и воспользуется)
+- Срок действия токена.
+Большинство этих параметров должны быть настроены во время выполнения: однако, поскольку они содержат некоторую конфиденциальную информацию, вместо того, чтобы жестко запрограммировать их в нашем исходном коде, мы должны определить их в
+Файл(ы) конфигурации appsettings.json, точно так же, как мы это делали со строками подключения к базе данных.
+в главе 5 «Модель данных с Entity Framework Core». Такая передовая практика также позволит нам определить
+настройки, специфичные для среды, а также защищать эти данные с помощью метода пользовательских секретов, который мы
+объяснено в той же главе.
+Для простоты давайте просто добавим несколько примеров настроек в конце наших настроек приложения.
+JSON-файл:
+
+```json
+"JwtSettings": {
+ "SecurityKey": "MyVeryOwnSecurityKey",
+ "Issuer": "MyVeryOwnIssuer",
+ "Audience": "https://localhost:4200",
+ "ExpirationTimeInMinutes": 30
+ },
+```
+
+Стоит отметить, что мы собираемся использовать эти настройки не только для генерации JWT, но и для их проверки.
+
+# JwtHandler
+Теперь мы наконец можем создать класс обслуживания, который будет генерировать JWT.
+Создайте новый файл в папке /Data/, назовите его JwtHandler.cs и заполните его следующим кодом:
+
+```Csharp
+using Microsoft.AspNetCore.Identity;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using WorldCitiesAPI.Data.Models;
+namespace WorldCitiesAPI.Data
+{
+ public class JwtHandler
+ {
+ private readonly IConfiguration _configuration;
+ private readonly UserManager<ApplicationUser> _userManager;
+ public JwtHandler(
+ IConfiguration configuration,
+ UserManager<ApplicationUser> userManager
+ )
+ {
+ _configuration = configuration;
+ _userManager = userManager;
+ }
+ public async Task<JwtSecurityToken> GetTokenAsync(ApplicationUser user)
+ {
+ var jwtOptions = new JwtSecurityToken(
+ issuer: _configuration["JwtSettings:Issuer"],
+ audience: _configuration["JwtSettings:Audience"],
+ claims: await GetClaimsAsync(user),
+ expires: DateTime.Now.AddMinutes(Convert.ToDouble(
+ _configuration["JwtSettings:ExpirationTimeInMinutes"])),
+ signingCredentials: GetSigningCredentials());
+ return jwtOptions;
+ }
+ private SigningCredentials GetSigningCredentials()
+ {
+ var key = Encoding.UTF8.GetBytes(
+ _configuration["JwtSettings:SecurityKey"]);
+ var secret = new SymmetricSecurityKey(key);
+ return new SigningCredentials(secret,
+ SecurityAlgorithms.HmacSha256);
+ }
+ private async Task<List<Claim>> GetClaimsAsync(
+ ApplicationUser user)
+{
+ var claims = new List<Claim>
+ {
+ new Claim(ClaimTypes.Name, user.Email)
+ };
+ foreach (var role in await _userManager.GetRolesAsync(user))
+ {
+ claims.Add(new Claim(ClaimTypes.Role, role));
+ }
+ return claims;
+ }
+ }
+}
+```
+Как мы видим, этот класс содержит общедоступный метод GetTokenAsync, который можно использовать для генерации JWT.
+и несколько частных методов, используемых внутри компании для получения ключа безопасности, алгоритма и дайджеста для
+подпишите цифровой подписью токен, а также заявки на добавление — имя пользователя, адрес электронной почты и все его роли.
+Стоит отметить, что для получения настроек конфигурации приложения и ролей пользователя мы внедрили
+объект IConfiguration, содержащий значения appsettings.json и UserManager<TUser>
+провайдер, о котором мы говорили вначале; мы сделали это с помощью внедрения зависимостей, как и в случае с
+ApplicationDbContext и IWebHostEnvironment еще в главе 5 «Модель данных с Entity Framework Core».
+Класс JwtHandler — это первая служба ASP.NET Core, которую мы создаем: поскольку мы собираемся использовать его через
+внедрение зависимостей, нам нужно добавить его в DI-контейнер приложения, добавив следующее выделенное:
+строку в файле Program.cs непосредственно перед сборкой приложения:
+
+```Csharp
+builder.Services.AddScoped<JwtHandler>();
+var app = builder.Build();
+```
+Как мы видим, мы добавляем его с помощью метода AddScoped, то есть сервис будет зарегистрирован.
+с опцией регистрации с ограниченной областью действия. Прежде чем идти дальше, возможно, стоит сказать несколько слов
+объясните, что это за варианты регистрации и как они влияют на срок службы службы.
+
+# Варианты регистрации внедрения зависимостей
+Из главы 2 «Подготовка» мы уже знаем, что ASP.NET Core поддерживает внедрение зависимостей.
+(DI) шаблон проектирования программного обеспечения, метод достижения инверсии управления (IoC) между классами.
+и их зависимости.
+
+В типичном приложении ASP.NET Core такие зависимости регистрируются во встроенном сервисном контейнере.
+(IServiceProvider) в файле Program.cs. Всякий раз, когда мы регистрируем службу в DI-контейнере, мы
+может выбрать вариант регистрации, который определит, как будут предоставляться экземпляры этой службы.
+в течение жизненного цикла приложения и/или запроса.
+Доступны следующие варианты регистрации:
+- Переходный период. Новый экземпляр службы предоставляется каждый раз, когда он запрашивается, независимо от
+область HTTP. По сути, это означает, что у нас всегда будет совершенно новый объект, то есть без
+риск возникновения проблем с параллелизмом.
+- Ограничено. Новый экземпляр службы предоставляется для каждого отдельного HTTP-запроса. Однако,
+один и тот же экземпляр предоставляется в рамках любого отдельного HTTP-запроса.
+- Синглтон. По первому запросу будет создан один экземпляр службы, а затем
+предоставляется всем последующим запросам до тех пор, пока приложение не остановится.
+Параметр Transient отлично подходит для облегченных сервисов с небольшим состоянием или без него; однако он использует больше
+памяти и ресурсов, что отрицательно влияет на производительность, особенно если веб-сайт должен
+иметь дело с большим количеством одновременных HTTP-запросов.
+Опция Scoped используется по умолчанию и часто является лучшим подходом, когда нам нужно поддерживать
+состояние в HTTP-запросах, предполагая, что нам не нужно заново создавать сервис каждый раз, когда мы его внедряем.
+Вариант Singleton является наиболее эффективным с точки зрения памяти и производительности, поскольку сервис
+создается один раз и повторно используется повсюду в течение жизненного цикла приложения; кроме того, это также может быть полезно
+для сохранения «глобального», независимого от запроса состояния. Однако тот факт, что служба (и ее состояние)
+общий для всех запросов сильно ограничивает его область применения и при неправильном использовании может привести к уязвимостям,
+утечки памяти или другие проблемы безопасности или производительности.
+Поскольку наш сервис JwtHandler очень легкий и не имеет особых требований к состоянию, любой
+опция регистрации будет работать без проблем. Тем не менее, мы выбрали подход Scoped, чтобы
+каждый экземпляр будет следовать тому же жизненному циклу HTTP-запроса входа в систему, который его использует.
+Теперь мы наконец готовы реализовать наш AccountController.
+
+# Контроллер учетной записи
+Создайте новый файл в папке /Controllers/, назовите его AccountController.cs и заполните его следующим кодом:
+
+```Csharp
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using WorldCitiesAPI.Data;
+using WorldCitiesAPI.Data.Models;
+namespace WorldCitiesAPI.Controllers
+{
+ [Route("api/[controller]")]
+[ApiController]
+ public class AccountController : ControllerBase
+ {
+ private readonly ApplicationDbContext _context;
+ private readonly UserManager<ApplicationUser> _userManager;
+ private readonly JwtHandler _jwtHandler;
+ public AccountController(
+ ApplicationDbContext context,
+ UserManager<ApplicationUser> userManager,
+ JwtHandler jwtHandler)
+ {
+ _context = context;
+ _userManager = userManager;
+ _jwtHandler = jwtHandler;
+ }
+ [HttpPost("Login")]
+ public async Task<IActionResult> Login(LoginRequest loginRequest)
+ {
+ var user = await _userManager.FindByNameAsync(loginRequest.Email);
+ if (user == null
+ || !await _userManager.CheckPasswordAsync(user, loginRequest.
+Password))
+ return Unauthorized(new LoginResult() {
+ Success = false,
+ Message = "Invalid Email or Password."
+ });
+ var secToken = await _jwtHandler.GetTokenAsync(user);
+ var jwt = new JwtSecurityTokenHandler().WriteToken(secToken);
+ return Ok(new LoginResult() {
+ Success = true, Message = "Login successful", Token = jwt
+ });
+ }
+ }
+}
+```
+Как мы видим, метод действия Login эффективно использует все классы, которые мы реализовали до сих пор.
+Более конкретно, он делает следующее:
+- Принимает объект LoginRequest, содержащий учетные данные пользователя.
+- проверяет их с помощью API UserManager, который мы внедрили в контроллер с помощью внедрения зависимостей.
+- Создает JWT, используя наш класс JwtHandler, если данные учетные данные действительны, в противном случае он выдает
+сообщение об ошибке
+- Отправляет общий результат клиенту с помощью класса LoginResult POCO, к которому мы добавили короткий
+некоторое время назад
+Теперь наш веб-API ASP.NET Core может аутентифицировать запрос на вход и возвращать JWT. Однако мы
+все еще не может должным образом проверить эти токены и подтвердить их подлинность. Для этого нам нужно настроить
+JwtBearerMiddleware с теми же настройками конфигурации, которые мы используем для их создания.
+
+# Настройка JwtBearerMiddleware
+Чтобы правильно настроить JwtBearerMiddleware, нам нужно добавить в файл Program следующие строки.
+cs, чуть ниже настроек ASP.NET Core Identity, которые мы добавили некоторое время назад:
+
+```Csharp
+// Добавляем службы аутентификации и промежуточное ПО
+builder.Services.AddAuthentication(opt =>
+{
+  opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+  opt.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+}).AddJwtBearer(options =>
+{
+  options.TokenValidationParameters = новые параметры TokenValidationParameters
+  {
+  RequireExpirationTime = true,
+  ValidateIssuer = правда,
+  Валидатаудиенс = правда,
+  ValidateLifetime = правда,
+  ValidateIssuerSigningKey = true,
+  ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
+  ValidAudience = builder.Configuration["JwtSettings:Audience"],
+  IssuerSigningKey = новый SymmetricSecurityKey(System.Text.Encoding.UTF8.
+GetBytes(builder.Configuration["JwtSettings:SecurityKey"]))
+  };
+});
+```
+Приведенный выше код зарегистрирует JwtBearerMiddleware, который извлечет любой JWT из
+Заголовок запроса авторизации и проверьте его, используя параметры конфигурации, определенные в
+файл appsettings.json.
+
+Стоит отметить, что, поскольку мы теперь используем службы аутентификации, нам также необходимо добавить
+AuthenticationMiddleware для конвейера запросов в файле Program.cs. Мы можем сделать это прямо перед тем, как
+AuthorizationMiddleware следующим образом (выделена новая строка):
+
+```Csharp
+app.UseAuthentication();
+app.UseAuthorization();
+```
+Все, что нам нужно сделать сейчас, это создать несколько пользователей для аутентификации.
+
+# Обновление SeedController
+Лучший способ создать нового пользователя с нуля — использовать SeedController, который реализует
+механизм заполнения, который мы настроили в главе 5 «Модель данных с Entity Framework Core»; однако,
+чтобы взаимодействовать с необходимыми для этого API-интерфейсами ASP.NET Core Identity, нам нужно внедрить их.
+используя DI, как мы уже делали с ApplicationDbContext.
+
+# Добавление RoleManager и UserManager через DI
+В обозревателе решений откройте файл /Controllers/SeedController.cs проекта WorldCities.
+и соответствующим образом обновите его содержимое с помощью следующего кода (новые/обновленные строки выделены):
+
+```Csharp
+using Microsoft.AspNetCore.Identity;
+// ...existing code...
+public class SeedController : ControllerBase
+{
+ private readonly ApplicationDbContext _context;
+ private readonly RoleManager<IdentityRole> _roleManager;
+ private readonly UserManager<ApplicationUser> _userManager;
+ private readonly IWebHostEnvironment _env;
+ private readonly IConfiguration _configuration;
+ public SeedController(
+ ApplicationDbContext context,
+ RoleManager<IdentityRole> roleManager,
+ UserManager<ApplicationUser> userManager,
+ IWebHostEnvironment env,
+ IConfiguration configuration)
+{
+ _context = context;
+ _roleManager = roleManager;
+ _userManager = userManager;
+ _env = env;
+ _configuration = configuration;
+ }
+```
+
+Мы снова добавили поставщиков RoleManager<TRole> и UserManager<TUser> с помощью DI. Посмотрим, как
+мы сможем использовать этих поставщиков для создания наших пользователей и ролей достаточно скоро.
+Пока мы были там, мы также воспользовались возможностью внедрить экземпляр IConfiguration, который мы собираемся
+использовать для получения паролей по умолчанию для наших пользователей. Мы можем определить эти пароли в наших секретах.
+json следующим образом:
+
+```json
+{
+ "ConnectionStrings": {
+ // ...
+ },
+ "DefaultPasswords": {
+ "RegisteredUser": "Sampl3Pa$$_User",
+ "Administrator": "Sampl3Pa$$_Admin"
+ },
+```
+Давайте сделаем это сейчас, чтобы они были готовы позже.
+Теперь давайте определим следующий метод в конце файла /Controllers/SeedController.cs справа
+ниже существующего метода Import():
+
+```Csharp
+[HttpGet]
+public async Task<ActionResult> CreateDefaultUsers()
+{
+ throw new NotImplementedException();
+}
+```
+В типичном ApiController добавление еще одного метода действия с атрибутом [HttpGet]
+создаст неоднозначный маршрут, который будет конфликтовать с исходным методом, принимающим
+HTTP-запросы GET (метод Import()): этот код не будет выполняться при достижении конечной точки. Однако, поскольку наш SeedController настроен на выполнение имен действий
+во внимание благодаря правилу маршрутизации [Route("api/[controller]/[action]")], которое
+мы поместили над конструктором класса еще в главе 5 «Модель данных с Entity Framework».
+Core, мы имеем право добавить этот метод, не создавая конфликта.
+
+В отличие от того, что мы обычно делаем, мы не собираемся сразу реализовывать этот метод; мы возьмем
+это шанс использовать подход разработки через тестирование (TDD), а это значит, что мы начнем
+с созданием (неудачного) модульного теста.
+
+# Определение модульного теста CreateDefaultUsers()
+Если мы хотим имитировать процесс «добавления нового пользователя» в тесте, нам понадобится UserManager.
+экземпляр (чтобы добавить пользователей) и экземпляр RoleManager (чтобы дать им роль). Именно по этой причине прежде
+создавая реальный метод тестирования, было бы полезно предоставить нашему проекту WorldCitiesAPI.Tests
+вспомогательный класс, который мы можем использовать для создания этих экземпляров. Давай сделаем это.
+
+# Добавление статического класса IdentityHelper
+В обозревателе решений создайте новый файл IdentityHelper.cs в проекте WorldCitiesAPI.Tests.
+После этого заполните его содержимое следующим кодом:
+
+```Csharp
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Moq;
+using System;
+using System.Collections.Generic;
+using System.Text;
+namespace WorldCitiesAPI.Tests
+{
+ public static class IdentityHelper
+ {
+ public static RoleManager<TIdentityRole>
+ GetRoleManager<TIdentityRole>(
+ IRoleStore<TIdentityRole> roleStore) where TIdentityRole :
+ IdentityRole
+ {
+return new RoleManager<TIdentityRole>(
+ roleStore,
+ new IRoleValidator<TIdentityRole>[0],
+ new UpperInvariantLookupNormalizer(),
+ new Mock<IdentityErrorDescriber>().Object,
+ new Mock<ILogger<RoleManager<TIdentityRole>>>(
+ ).Object);
+ }
+ public static UserManager<TIDentityUser>
+ GetUserManager<TIDentityUser>(
+ IUserStore<TIDentityUser> userStore) where TIDentityUser :
+ IdentityUser
+ {
+ return new UserManager<TIDentityUser>(
+ userStore,
+ new Mock<IOptions<IdentityOptions>>().Object,
+ new Mock<IPasswordHasher<TIDentityUser>>().Object,
+ new IUserValidator<TIDentityUser>[0],
+ new IPasswordValidator<TIDentityUser>[0],
+ new UpperInvariantLookupNormalizer(),
+ new Mock<IdentityErrorDescriber>().Object,
+ new Mock<IServiceProvider>().Object,
+ new Mock<ILogger<UserManager<TIDentityUser>>>(
+ ).Object);
+ }
+ }
+}
+```
+Как мы видим, мы создали два метода — GetRoleManager и GetUserManager, — которые мы можем использовать для
+создайте этих поставщиков для других тестов. Стоит отметить, что мы создаём реальные экземпляры (а не моки).
+поставщиков RoleManager и UserManager, поскольку они нам понадобятся для выполнения некоторых операций чтения/записи.
+операции с базой данных в памяти, которую мы предоставим ApplicationDbContext, который будет
+создан для теста. По сути, это означает, что эти провайдеры будут выполнять свою работу по-настоящему, но
+все будет выполняться в базе данных в памяти, а не в источнике данных SQL Server, точно так же, как
+мы сделали это с нашими предыдущими тестами.
+Тем не менее, мы по-прежнему эффективно использовали библиотеку пакетов Moq для создания нескольких макетов для эмуляции
+количество параметров, необходимых для создания экземпляров RoleManager и UserManager. К счастью, большинство
+из них — внутренние объекты, которые не понадобятся для выполнения наших текущих тестов; для тех, что требуются, нам пришлось создать реальный экземпляр.
+
+Например, для обоих провайдеров мы были вынуждены создать реальный экземпляр
+UpperInvariantLookupNormalizer — который реализует интерфейс ILookupNormalizer — поскольку он используется внутри RoleManager (для поиска существующих ролей) как
+а также UserManager (для поиска существующих имен пользователей); если бы мы вместо этого посмеялись над этим, мы
+при попытке пройти эти тесты вы столкнулись бы с некоторыми неприятными ошибками во время выполнения.
+
+Теперь, когда у нас есть эти два вспомогательных метода, мы можем создать тест, который будет эффективно их использовать.
+
+# Добавление класса SeedController_Test
+В обозревателе решений создайте новый файл /SeedController_Tests.cs в WorldCitiesAPI.Tests.
+проект. После этого заполните его содержимое следующим кодом:
+
+```Csharp
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Moq;
+using System.Threading.Tasks;
+using WorldCitiesAPI.Controllers;
+using WorldCitiesAPI.Data;
+using WorldCitiesAPI.Data.Models;
+using Xunit;
+namespace WorldCitiesAPI.Tests
+{
+ public class SeedController_Tests
+ {
+ /// <summary>
+ /// Test the CreateDefaultUsers() method
+ /// </summary>
+ [Fact]
+ public async Task CreateDefaultUsers()
+ {
+ // Arrange
+ // create the option instances required by the
+ // ApplicationDbContext
+ var options = new
+ DbContextOptionsBuilder<ApplicationDbContext>()
+ .UseInMemoryDatabase(databaseName: "WorldCities")
+ .Options;
+// create a IWebHost environment mock instance
+ var mockEnv = Mock.Of<IWebHostEnvironment>();
+ // create a IConfiguration mock instance
+ var mockConfiguration = new Mock<IConfiguration>();
+ mockConfiguration.SetupGet(x => x[It.Is<string>(s => s ==
+"DefaultPasswords:RegisteredUser")]).Returns("M0ckP$$word");
+ mockConfiguration.SetupGet(x => x[It.Is<string>(s => s ==
+"DefaultPasswords:Administrator")]).Returns("M0ckP$$word");
+ // create a ApplicationDbContext instance using the
+ // in-memory DB
+ using var context = new ApplicationDbContext(options);
+ // create a RoleManager instance
+ var roleManager = IdentityHelper.GetRoleManager(
+ new RoleStore<IdentityRole>(context));
+ // create a UserManager instance
+ var userManager = IdentityHelper.GetUserManager(
+ new UserStore<ApplicationUser>(context));
+ // create a SeedController instance
+ var controller = new SeedController(
+ context,
+ roleManager,
+ userManager,
+ mockEnv,
+ mockConfiguration.Object
+ );
+ // define the variables for the users we want to test
+ ApplicationUser user_Admin = null!;
+ ApplicationUser user_User = null!;
+ ApplicationUser user_NotExisting = null!;
+ // Act
+ // execute the SeedController's CreateDefaultUsers()
+ // method to create the default users (and roles)
+ await controller.CreateDefaultUsers();
+// retrieve the users
+ user_Admin = await userManager.FindByEmailAsync(
+ "admin@email.com");
+ user_User = await userManager.FindByEmailAsync(
+ "user@email.com");
+ user_NotExisting = await userManager.FindByEmailAsync(
+ "notexisting@email.com");
+ // Assert
+ Assert.NotNull(user_Admin);
+ Assert.NotNull(user_User);
+ Assert.Null(user_NotExisting);
+ }
+ }
+}
+```
+Приведенный выше код довольно длинный, но теперь он должен быть легко понятен. Вот, вкратце, что
+мы делаем там:
+- На этапе аранжировки мы создаем макеты (и не-макеты), необходимые для выполнения
+реальный тест
+- На этапе действия мы выполняем тест и пытаемся получить полученных (созданных) пользователей для
+подтвердить результат
+- На этапе утверждения мы оцениваем ожидаемый результат.
+На этом наш модульный тест готов; нам просто нужно выполнить его, чтобы увидеть сбой.
+Для этого щелкните правой кнопкой мыши узел WorldCitiesAPI.Test в обозревателе решений и выберите «Выполнить тесты».
+
+Если мы все сделали правильно, мы сможем увидеть провал нашего теста CreateDefaultUsers(), просто
+как на следующем скриншоте:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/1cf37f89-1d6b-4e22-b3d9-259f5200010f)
+
+Вот и все; все, что нам нужно сделать сейчас, это реализовать метод CreateDefaultUsers() в нашем SeedController.
+чтобы пройти предыдущий тест.
+
+# Реализация метода CreateDefaultUsers()
+Снова откройте файл /Controllers/SeedController.cs, прокрутите вниз до действия CreateDefaultUsers.
+метод и замените NotImplementedException следующим кодом:
+
+```Csharp
+[HttpGet]
+public async Task<ActionResult> CreateDefaultUsers()
+{
+ // setup the default role names
+ string role_RegisteredUser = "RegisteredUser";
+ string role_Administrator = "Administrator";
+ // create the default roles (if they don't exist yet)
+ if (await _roleManager.FindByNameAsync(role_RegisteredUser) ==
+ null)
+ await _roleManager.CreateAsync(new
+ IdentityRole(role_RegisteredUser));
+ if (await _roleManager.FindByNameAsync(role_Administrator) ==
+ null)
+ await _roleManager.CreateAsync(new
+ IdentityRole(role_Administrator));
+ // create a list to track the newly added users
+ var addedUserList = new List<ApplicationUser>();
+ // check if the admin user already exists
+ var email_Admin = "admin@email.com";
+ if (await _userManager.FindByNameAsync(email_Admin) == null)
+ {
+ // create a new admin ApplicationUser account
+ var user_Admin = new ApplicationUser()
+ {
+ SecurityStamp = Guid.NewGuid().ToString(),
+ UserName = email_Admin,
+ Email = email_Admin,
+ };
+// insert the admin user into the DB
+ await _userManager.CreateAsync(user_Admin, _
+configuration["DefaultPasswords:Administrator"]);
+ // assign the "RegisteredUser" and "Administrator" roles
+ await _userManager.AddToRoleAsync(user_Admin,
+ role_RegisteredUser);
+ await _userManager.AddToRoleAsync(user_Admin,
+ role_Administrator);
+ // confirm the e-mail and remove lockout
+ user_Admin.EmailConfirmed = true;
+ user_Admin.LockoutEnabled = false;
+ // add the admin user to the added users list
+ addedUserList.Add(user_Admin);
+ }
+ // check if the standard user already exists
+ var email_User = "user@email.com";
+ if (await _userManager.FindByNameAsync(email_User) == null)
+ {
+ // create a new standard ApplicationUser account
+ var user_User = new ApplicationUser()
+ {
+ SecurityStamp = Guid.NewGuid().ToString(),
+ UserName = email_User,
+ Email = email_User
+ };
+ // insert the standard user into the DB
+ await _userManager.CreateAsync(user_User, _
+configuration["DefaultPasswords:RegisteredUser"]);
+ // assign the "RegisteredUser" role
+ await _userManager.AddToRoleAsync(user_User,
+ role_RegisteredUser);
+ // confirm the e-mail and remove lockout
+ user_User.EmailConfirmed = true;
+ user_User.LockoutEnabled = false;
+// add the standard user to the added users list
+ addedUserList.Add(user_User);
+ }
+ // if we added at least one user, persist the changes into the DB
+ if (addedUserList.Count > 0)
+ await _context.SaveChangesAsync();
+ return new JsonResult(new
+ {
+ Count = addedUserList.Count,
+ Users = addedUserList
+ });
+}
+```
+Код не требует пояснений и содержит множество комментариев, объясняющих различные шаги; однако,
+вот удобное краткое изложение того, что мы только что сделали:
+- Мы начали с определения некоторых имен ролей по умолчанию (RegisteredUsers для стандартных зарегистрированных пользователей).
+пользователи, Администратор для пользователей административного уровня).
+- Мы создали логику для проверки существования этих ролей. Если их нет, мы создаём
+их. Как и ожидалось, обе задачи были выполнены с помощью RoleManager.
+- Мы определили локальную переменную списка пользователей для отслеживания новых добавленных пользователей, чтобы мы могли выводить ее в
+пользователя в объекте JSON, который мы вернем в конце метода действия.
+- Мы создали логику для проверки существования пользователя с именем пользователя admin@email.com.
+Если нет, то создаем его и присваиваем ему роли RegisteredUser и Administrator, так как
+это будет обычный пользователь, а также учетная запись администратора нашего приложения.
+- Мы создали логику для проверки существования пользователя с именем пользователя user@email.com;
+если нет, мы создаем его и присваиваем ему роль RegisteredUser.
+- В конце метода действия мы настроили объект JSON, который мы вернем вызывающей стороне;
+этот объект содержит количество добавленных пользователей и список, содержащий их, который будет сериализован в объект JSON, который будет отображать значения их сущностей.
+Роли администратора и зарегистрированного пользователя, которые мы только что реализовали, будут ядром нашего механизма авторизации; все наши пользователи будут закреплены хотя бы за одним из них. Обратите внимание, как мы назначили
+оба они доступны пользователю с правами администратора, чтобы они могли делать все, что может делать обычный пользователь, а также многое другое:
+все остальные пользователи имеют только последнюю роль, поэтому они не смогут выполнять какие-либо действия на административном уровне.
+задачи — если им не предоставлена роль Администратора.
+
+Прежде чем двигаться дальше, стоит отметить, что мы используем адрес электронной почты пользователя как для электронной почты, так и для
+Поля имени пользователя. Мы сделали это намеренно, поскольку эти два поля в системе ASP.NET Core Identity по умолчанию используются как взаимозаменяемые; всякий раз, когда мы добавляем пользователя с помощью API по умолчанию, адрес электронной почты
+Предоставленное значение также сохраняется в поле UserName, даже если это два отдельных поля в AspNetUsers.
+таблица базы данных. Хотя это поведение можно изменить, мы будем придерживаться настроек по умолчанию, поэтому
+что мы сможем использовать настройки по умолчанию, не меняя их во всем ASP.NET Core Identity
+
+# Повторный запуск модульного теста
+Теперь, когда мы реализовали тест, мы можем повторно запустить тест CreateDefaultUsers() и посмотреть, будет ли
+это проходит. Как обычно, мы можем сделать это, щелкнув правой кнопкой мыши корневой узел WorldCitiesAPI.Test в Solution.
+Проводник и выберите «Выполнить тесты» или на панели «Обозреватель тестов».
+Если мы все сделали правильно, то должны увидеть что-то вроде этого:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/eae6747a-0321-4f16-b8ef-c14ff1d680ee)
+
+Теперь, когда наш модульный тест пройден, мы можем перейти к следующей теме.
+
+# Обеспечение методов действия
+Основная цель того, что мы делаем в этой главе, — ограничить использование некоторых наших веб-API только
+только авторизованные пользователи. По этой причине мы добавляем систему идентификации ASP.NET, создавая пару
+зарегистрированных пользователей и ролей, а также внедрение процесса их аутентификации.
+Однако нам все равно нужно сообщить нашему приложению ASP.NET Core, что мы хотим ограничить только зарегистрированными пользователями: как
+по сути, все наши контроллеры и методы действий на данный момент доступны каждому, независимо от
+HTTP-запроса, исходящего от зарегистрированного пользователя – определяется наличием действительного JWT – или
+нет. Какой смысл в аутентификации этих запросов, если мы не «закроем» некоторые из этих дверей?
+Для выполнения такой задачи мы можем использовать AuthorizeAttribute, входящий в состав Microsoft.AspNetCore.
+Пространство имен авторизации. Этот атрибут можно использовать для ограничения доступа к контроллерам и/или действиям.
+методы только авторизованным пользователям; кроме того, это также позволяет нам указать одну или несколько ролей для
+авторизовать, а это именно то, что нам нужно для реализации детальной схемы авторизации.
+Первое, что мы должны сделать, это определить методы действий, которые мы хотим защитить: в нашем текущем сценарии может быть разумно ограничить доступ ко всем методам PUT и POST CitiesController и
+CountryController только для зарегистрированных пользователей. Это означает, что анонимные пользователи не смогут выполнять
+обновления в нашей базе данных.
+
+Еще более ограничительную политику следует применять к методам DELETE этих контроллеров и к
+весь SeedController, поскольку они предназначены для внесения критических изменений в наши данные. Эти действия
+должен быть доступен только администраторам.
+Давайте посмотрим, как мы можем использовать AuthorizeAttribute для этого.
+
+# Защита CitiesController
+Откройте файл /Controllers/CitiesController.cs и добавьте следующий оператор using вверху.
+файла:
+
+```Csharp
+using Microsoft.AspNetCore.Authorization;
+```
+После этого добавьте следующий атрибут над методами PutCity и PostCity:
+
+```Csharp
+[Authorize(Roles = "RegisteredUser")]
+```
+И последнее, но не менее важное: добавьте следующий атрибут над методом DeleteCity:
+
+```Csharp
+[Authorize(Roles = "Administrator")]
+```
+Вот и все. Давайте сделаем то же самое с CountryController.
+
+# Контроллер безопасности стран
+Откройте файл /Controllers/CountriesController.cs и добавьте следующий оператор using в файл
+начало файла:
+
+```Csharp
+using Microsoft.AspNetCore.Authorization;
+```
+После этого добавьте следующий атрибут над методами PutCountry и PostCountry:
+
+```Csharp
+[Authorize(Roles = "RegisteredUser")]
+```
+И последнее, но не менее важное: добавьте следующий атрибут над методом DeleteCountry:
+
+```Csharp
+[Authorize(Roles = "Administrator")]
+```
+Теперь мы можем переключиться на SeedController.
+
+# Защита SeedController
+SeedController требует более радикального подхода, поскольку мы хотим обезопасить все его методы действий.
+и не только некоторые из них.
+Для этого после добавления обычной ссылки на Microsoft.AspNetCore.Authorization
+пространство имен в начало файла, поместите следующий атрибут над конструктором SeedController:
+
+```Csharp
+[Authorize(Roles = "Administrator")]
+```
+При размещении на уровне конструктора AuthorizeAttribute будет применяться ко всем действиям контроллера.
+методы, а это именно то, что нам нужно.
+
+Теперь все эти методы действий защищены от несанкционированного доступа, так как принимают только
+запросы, поступающие от зарегистрированных и вошедших в систему пользователей; те, у кого нет доступа, получат 401
+Несанкционированный ответ об ошибке HTTP.
+Вот и все; теперь мы наконец закончили обновление классов нашего проекта. Однако прежде чем перейти на Angular,
+давайте потратим пару минут, чтобы лучше понять фундаментальную архитектурную концепцию ASP.NET Core.
+которым мы пользуемся довольно давно.
+
+# Несколько слов об асинхронных задачах, ожиданиях и взаимоблокировках
+Как мы видим, посмотрев на то, что мы сделали до сих пор, все соответствующие API системы ASP.NET Core Identity
+методы являются асинхронными, то есть они возвращают асинхронную задачу, а не заданное возвращаемое значение. Для
+именно по этой причине, поскольку нам нужно выполнять эти различные задачи одну за другой, нам пришлось добавить
+все они с ключевым словом await.
+Вот пример использования await, взятый из предыдущего кода:
+
+```Csharp
+await _userManager.AddToRoleAsync(user_Admin, role_RegisteredUser);
+```
+Ключевое слово await, как следует из названия, ожидает завершения асинхронной задачи, прежде чем продолжить.
+Стоит отметить, что такое выражение не блокирует поток, в котором оно выполняется; вместо,
+это заставляет компилятор зарегистрировать остальную часть асинхронного метода как продолжение ожидаемой задачи,
+тем самым возвращая управление потоком вызывающей стороне. В конце концов, когда задача завершается, она вызывает свой
+продолжение, тем самым возобновляя выполнение асинхронного метода с того места, где оно было остановлено.
+
+Именно по этой причине ключевое слово await можно использовать только внутри асинхронных методов; как
+на самом деле, предыдущая логика требует, чтобы вызывающая сторона также была асинхронной, в противном случае она
+не сработает.
+
+В качестве альтернативы мы могли бы использовать метод Wait() следующим образом:
+
+```Csharp
+_userManager.AddToRoleAsync(user_Admin, role_RegisteredUser).Wait();
+```
+Однако мы сделали это не зря. В противоположность ключевому слову await, которое сообщает
+компилятор асинхронно ожидает завершения асинхронной задачи, метод Wait() без параметров
+заблокирует вызывающий поток до завершения асинхронной задачи. Следовательно, вызывающий поток будет
+безоговорочно дождаться завершения задачи.
+Чтобы лучше объяснить, как такие методы влияют на наше приложение ASP.NET Core, нам следует потратить немного времени.
+время лучше понять концепцию асинхронных задач, поскольку они являются ключевой частью ядра ASP.NET.
+Модель ТАП.
+Одна из первых вещей, которые нам следует усвоить при работе с методами синхронизации, вызывающими асинхронные задачи в ASP.
+NET заключается в том, что когда метод верхнего уровня ожидает выполнения задачи, его текущий контекст выполнения блокируется до тех пор, пока
+задача завершается. Это не будет проблемой, если только этот контекст не позволяет одновременно выполнять только один поток.
+время, как и в случае с AspNetSynchronizationContext.
+
+Если мы объединим эти две вещи, мы легко увидим, что блокировка асинхронного метода (то есть метода
+возврат асинхронной задачи) подвергнет наше приложение высокому риску взаимоблокировки.
+Тупик с точки зрения разработки программного обеспечения — это ужасная ситуация, которая возникает всякий раз, когда
+процесс или поток переходит в состояние ожидания на неопределенный срок, обычно потому, что ресурс, который он ожидает, удерживается
+другим процессом ожидания. В любом устаревшем веб-приложении ASP.NET мы каждый раз сталкиваемся с тупиковой ситуацией.
+время, когда мы блокируем задачу, просто потому, что для завершения этой задачи потребуется тот же контекст выполнения, что и вызывающий метод, который блокируется этим методом до тех пор, пока задача не завершится!
+К счастью, мы здесь не используем устаревший ASP.NET; мы используем ASP.NET Core, где устаревшие
+Шаблон ASP.NET, основанный на SynchronizationContext, заменен бесконтекстным подходом.
+на основе универсального пула потоков, устойчивого к взаимоблокировкам.
+По сути, это означает, что блокировка вызывающего потока с помощью метода Wait() больше не является такой уж проблематичной. Следовательно, если бы мы поменяли с его помощью ключевые слова await, наш метод все равно будет выполняться и завершаться.
+просто хорошо. Однако при этом мы в основном будем использовать синхронный код для выполнения асинхронных операций.
+операций, что обычно считается плохой практикой; более того, мы потеряем все преимущества
+привнесенные асинхронным программированием, такие как производительность и масштабируемость.
+По всем этим причинам подход await определенно является лучшим решением.
+
+Теперь, когда мы обновили классы нашего проекта и признали важность асинхронных задач, мы
+может переключиться на нашу базу данных и сделать все возможное, чтобы ускорить ее работу с нашей совершенно новой моделью данных на основе идентификации.
+
+# Обновление базы данных
+Пришло время создать новую миграцию и отразить изменения кода в базе данных, воспользовавшись преимуществами подхода «сначала код», который мы использовали в главе 5 «Модель данных с Entity Framework Core».
+Вот список того, что мы собираемся сделать в этом разделе:
+- Добавьте миграцию удостоверений с помощью команды dotnet-ef, как мы это делали в главе 5 «Данные».
+Модель с ядром Entity Framework
+- Применить миграцию к базе данных, обновив ее без изменения существующих данных или выполнения удаления и повторного создания.
+- Заполните данные, используя метод CreateDefaultUsers() SeedController, который мы реализовали ранее.
+Давай приступим к работе.
+
+# Добавление миграции удостоверений
+Первое, что нам нужно сделать, это добавить новую миграцию в нашу модель данных, чтобы отразить изменения, которые
+мы реализовали это путем расширения класса ApplicationDbContext.
+Для этого откройте командную строку или приглашение PowerShell, перейдите в корневую папку нашего проекта WorldCitiesAPI.
+а затем напишите следующее:
+
+```
+dotnet ef migrations add "Identity" -o "Data/Migrations"
+```
+Затем в проект следует добавить новую миграцию, как показано на следующем снимке экрана:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/caacc52a-4a3c-4d95-b5b9-7c9367486089)
+
+Новые файлы миграции будут автоматически созданы в папке \Data\Migrations\.
+
+# Применение миграции
+Следующее, что нужно сделать, это применить новую миграцию к нашей базе данных. Мы можем выбирать между двумя вариантами:
+- Обновление существующей схемы модели данных с сохранением всех ее данных в том виде, в котором они есть.
+- Удаление и воссоздание базы данных с нуля.
+Фактически, вся цель функции миграции EF Core — предоставить способ постепенного обновления схемы базы данных, сохраняя при этом существующие данные в базе данных; для этого самого
+По этой причине мы собираемся пойти по первому пути.
+
+# Обновление существующей модели данных
+Чтобы применить миграцию к существующей схеме базы данных без потери существующих данных, выполните следующую команду из корневой папки нашего проекта WorldCitiesAPI:
+
+```
+dotnet ef database update
+```
+Затем инструмент dotnet ef применит необходимые обновления к нашей схеме базы данных SQL и выведет результат.
+соответствующая информация, а также фактические запросы SQL в буфере консоли.
+После выполнения задачи нам следует подключиться к нашей базе данных с помощью инструмента SQL Server Management Studio, который мы установили еще в главе 5 «Модель данных с Entity Framework Core», и проверить
+на наличие новых таблиц, связанных с идентификацией.
+Если все пойдет хорошо, мы сможем увидеть новые таблицы идентификаторов вместе с существующими.
+Таблицы городов и стран:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/5f0a9c4d-c39b-4b0f-8191-464994f055a4)
+
+Как мы можем легко догадаться, эти таблицы пока пусты. Чтобы заполнить их, нам придется запустить команду
+CreateDefaultUsers() метода SeedController, что мы и собираемся сделать в
+недолго.
+
+# Удаление и воссоздание модели данных с нуля
+Для полноты давайте потратим немного времени на то, как воссоздать нашу модель данных и базу данных.
+схема (схема БД) с нуля. Излишне говорить, что если мы выберем этот путь, мы потеряем все существующие данные. Однако мы всегда можем перезагрузить все, используя метод Import() SeedController.
+следовательно, это не будет большой потерей.
+
+На самом деле, мы потеряем только то, что сделали во время наших тестов на основе CRUD в главе 5 «Данные».
+Модель с Entity Framework Core.
+Хотя удаление и повторное создание базы данных не является рекомендуемым подходом, особенно учитывая, что мы приняли шаблон миграции именно для того, чтобы избежать такого сценария, это может быть достойным решением.
+обходной путь всякий раз, когда мы теряем контроль над нашей миграцией, при условии, что мы полностью создаем резервную копию данных
+прежде чем это делать и, главное, знать, как потом все восстановить.
+
+Хотя это может показаться ужасным способом исправить ситуацию, это определенно не так;
+мы все еще находимся на стадии разработки, поэтому определенно можем разрешить полное обновление базы данных.
+
+Если мы решим пойти по этому пути, вот консольные команды dotnet-ef:
+
+```
+> dotnet ef database drop
+> dotnet ef database update
+```
+
+Прежде чем продолжить, команда drop должна запросить подтверждение «Да/Нет». Когда это произойдет, нажмите клавишу Y.
+и позвольте этому случиться. Когда задачи удаления и обновления выполнены, мы можем запустить наш проект в режиме отладки.
+mode и посетите метод Import() SeedController. После этого у нас должна быть обновленная база данных с поддержкой ASP.NET Core Identity.
+
+# Заполнение данных
+Независимо от варианта обновления базы данных, который мы выбрали, теперь нам необходимо заполнить ее заново.
+Для этого откройте файл /Controllers/SeedController.cs и (временно) закомментируйте
+AuthorizeAttribute, который мы добавили минуту назад, чтобы ограничить его использование администраторами, чтобы
+мы (временно) сможем его использовать.
+На самом деле, нам необходимо это сделать, потому что в настоящее время у нас нет возможности аутентифицировать себя как
+администраторы, поскольку в нашем приложении Angular нет формы входа (пока). Но не волнуйтесь: мы закроемся
+этот разрыв достаточно скоро!
+После этого нажмите F5, чтобы запустить проект в режиме отладки, а затем вручную введите следующий URL-адрес в поле
+адресная строка браузера: https://localhost:40443/api/Seed/CreateDefaultUsers.
+Затем позвольте методу CreateDefaultUsers() SeedController творить чудеса.
+
+После этого мы сможем увидеть следующий ответ JSON:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/fa0c897d-993f-4ea0-9718-3ef9ce1b812c)
+
+Эти выходные данные уже говорят нам, что наши первые два пользователя были созданы и сохранены в нашей модели данных.
+Однако мы также можем подтвердить это, подключившись к нашей базе данных с помощью управления SQL Server.
+Инструмент Studio и просмотрите таблицу dbo.AspNetUsers (см. следующий снимок экрана):
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/659386fe-a9a3-42b9-a933-5fc8c084368b)
+
+Как мы видим, мы использовали следующие запросы T-SQL для проверки существующих пользователей и ролей:
+
+```sql
+SELECT *
+ FROM [WorldCities].[dbo].[AspNetUsers];
+SELECT *
+ FROM [WorldCities].[dbo].[AspNetRoles];
+```
+Теперь, когда мы подтвердили наличие пользователей и ролей, мы можем раскомментировать AuthorizeAttribute.
+SeedController, чтобы защитить его от несанкционированного доступа.
+
+Мы наконец закончили с внутренней частью. Наша реализация системы ASP.NET Core Identity готова,
+работает и полностью интегрирован с нашей моделью данных и базой данных; теперь нам просто нужно это реализовать
+внутри наших контроллеров и подключите его к нашему клиентскому приложению Angular.
+
+# Реализация аутентификации в Angular
+Чтобы обрабатывать аутентификацию токена на основе JWT, нам необходимо настроить серверную часть ASP.NET и
+Angular интерфейс для решения всех необходимых задач.
+В предыдущих разделах мы потратили немало времени на настройку служб идентификации .NET Core.
+и промежуточное программное обеспечение, а это означает, что мы уже на полпути; по сути, мы почти закончили с
+серверные задачи. В то же время мы ничего не делали на внешнем уровне: выборка пользователей, которых мы
+созданные в предыдущем разделе — admin@email.com и user@email.com — не имеют возможности войти в систему и
+нет регистрационной формы для создания новых пользователей.
+Однако, если мы подумаем о том, что мы делали в предыдущих главах, мы уже должны знать, что
+что нужно сделать, чтобы заполнить этот пробел: внедрить интерактивную форму входа (и, возможно, регистрации), используя
+те же методы, что и для CityEditComponent и CountryEditComponent.
+Более конкретно, вот список наших предстоящих задач:
+- Добавьте интерфейсы LoginRequest и LoginResult для связи с ASP.NET Core.
+Веб-API
+- Внедрить новую службу AuthService, которая будет выполнять HTTP-запросы и получать логин.
+результат вызова
+- Создайте LoginComponent, в котором будет размещена форма входа и который позволит пользователям, владеющим учетной записью,
+чтобы инициировать попытку входа в систему
+- Обновите NavMenuComponent, чтобы разрешить пользователям доступ к LoginComponent, сделайте их
+знать о своем статусе входа в систему и выполнить выход из системы
+- Добавить некоторые дополнительные механизмы контроля, чтобы лучше справляться со статусом аутентификации и
+разрешения авторизации, такие как HttpInterceptor и Route Guards
+- Протестируйте новую реализацию, чтобы убедиться, что все работает до этого момента.
+К концу раздела мы сможем входить и выходить из системы, используя пользователей, которых мы создали с помощью
+SeedController ранее.
+
+# Добавление интерфейса LoginRequest
+Давайте начнем с создания новой папки /src/app/auth/ в нашем угловом проекте WorldCities, где мы будем
+поместите все, что мы собираемся добавить.
+После этого создайте в этой папке новый файл login-request.ts и заполните его следующим содержимым:
+
+```ts
+export interface LoginRequest {
+ email: string;
+ password: string;
+}
+```
+
+Как мы видим, интерфейс строго напоминает класс LoginRequest, используемый нашим ASP.NET Core Web.
+API. Это не должно вызывать удивления, поскольку оно будет использоваться HTTP-запросом, вызывающим метод входа в систему.
+метод действия AccountController.
+
+# Добавление интерфейса LoginResult
+Теперь нам нужен интерфейс, который будет обрабатывать ответ JSON метода действия входа в систему.
+Создайте новый файл login-result.ts в папке /src/app/auth/ и заполните его следующим содержимым:
+
+```ts
+export interface LoginResult {
+ success: boolean;
+ message: string;
+ token?: string;
+}
+```
+Опять же, интерфейс строго напоминает класс LoginResult POCO нашего веб-API ASP.NET Core.
+
+# Реализация AuthService
+Теперь, когда у нас есть необходимые интерфейсы для инициирования наших запросов (и получения ответов), мы можем
+реализовать сервис Angular, который будет их выполнять.
+Создайте новый файл auth.service.ts в папке /src/app/auth/ и заполните его следующим содержимым:
+
+```ts
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { environment } from './../../environments/environment';
+import { LoginRequest } from './login-request';
+import { LoginResult } from './login-result';
+@Injectable({
+ providedIn: 'root',
+})
+export class AuthService {
+ constructor(
+ protected http: HttpClient) {
+ }
+ public tokenKey: string = "token";
+ isAuthenticated() : boolean {
+ return this.getToken() !== null;
+ }
+getToken() : string | null {
+ return localStorage.getItem(this.tokenKey);
+ }
+ login(item: LoginRequest): Observable<LoginResult> {
+ var url = environment.baseUrl + "api/Account/Login";
+ return this.http.post<LoginResult>(url, item);
+ }
+}
+```
+Приведенный выше код не должен вызывать удивления. Мы просто выполняем те же задачи, которые уже выполняли в
+предыдущие сервисы Angular, которые мы реализовали еще в главе 8, «Настройка кода и службы данных». 
+Единственное заметное отличие состоит в том, что здесь мы не расширяем суперкласс BaseService. Нам не нужно
+сделать это, по крайней мере, на данный момент.
+
+# Создание компонента входа
+Давайте теперь создадим файл LoginComponent, который позволит нашим пользователям выполнить попытку входа в систему.
+Откройте командную строку, перейдите к папке /src/app/auth/ проекта WorldCities Angular,
+и введите следующее:
+
+```
+ng generate component Login --flat --module=app --skip-tests
+```
+Приведенная выше команда создаст файлы LoginComponent в текущей папке.
+
+# login.component.ts
+После этого откройте файл login.comComponent.ts и обновите его содержимое следующим образом:
+
+```ts
+import { Component, OnInit } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { FormGroup, FormControl, Validators, AbstractControl, AsyncValidatorFn
+} from '@angular/forms';
+import { BaseFormComponent } from '../base-form.component';
+import { AuthService } from './auth.service';
+import { LoginRequest } from './login-request';
+import { LoginResult } from './login-result';
+@Component({
+ selector: 'app-login',
+ templateUrl: './login.component.html',
+ styleUrls: ['./login.component.scss']
+})
+export class LoginComponent
+ extends BaseFormComponent implements OnInit {
+ title?: string;
+ loginResult?: LoginResult;
+ constructor(
+ private activatedRoute: ActivatedRoute,
+ private router: Router,
+ private authService: AuthService) {
+ super();
+ }
+ ngOnInit() {
+ this.form = new FormGroup({
+ email: new FormControl('', Validators.required),
+ password: new FormControl('', Validators.required)
+ });
+ }
+ onSubmit() {
+ var loginRequest = <LoginRequest>{};
+ loginRequest.email = this.form.controls['email'].value;
+ loginRequest.password = this.form.controls['password'].value;
+ this.authService
+ .login(loginRequest)
+ .subscribe(result => {
+ console.log(result);
+ this.loginResult = result;
+ if (result.success && result.token) {
+ localStorage.setItem(this.authService.tokenKey, result.token);
+ }
+ }, error => {
+ console.log(error);
+ if (error.status == 401) {
+ this.loginResult = error.error;
+ }
+ });
+ }
+}
+```
+Для простоты мы не будем рассматривать предыдущий код, поскольку мы уже должны быть в состоянии полностью
+понять все, что он делает. Единственное новое понятие здесь представлено следующей строкой, когда
+успешный токен сохраняется в localStorage:
+
+```
+localStorage.setItem(this.authService.tokenKey, result.token);
+```
+В приведенной выше строке используется API веб-хранилища, функция JavaScript, которая обеспечивает механизм хранения.
+которые браузеры могут использовать для безопасного хранения пар ключ/значение. API предоставляет два механизма хранения данных:
+- sessionStorage, который доступен на время сеанса страницы, пока браузер
+открыт (включая перезагрузку и восстановление страницы)
+- localStorage, который сохраняется даже при закрытии и последующем открытии браузера: данные
+хранящийся таким образом, не имеет срока годности и должен быть очищен вручную (через JavaScript или
+очистив кеш браузера или локально сохраненные данные)
+В нашем примере кода мы используем localStorage, поскольку хотим сохранить токен JWT до тех пор, пока вручную не аннулируем его по истечении срока его действия. Однако оба механизма достаточно жизнеспособны, в зависимости от
+заданный сценарий использования и желаемый результат.
+
+# login.component.html
+Давайте теперь откроем файл login.comComponent.html и предоставим нашему LoginComponent подходящий пользовательский интерфейс:
+
+```html
+<div class="login">
+ <h1>Login</h1>
+ <form [formGroup]="form" (ngSubmit)="onSubmit()">
+ <p>
+ <mat-error *ngIf="loginResult && !loginResult.success">
+ <strong>ERROR</strong>: {{loginResult.message}}
+ </mat-error>
+ </p>
+ <!-- Name -->
+ <mat-form-field>
+ <mat-label>Email:</mat-label>
+ <input matInput formControlName="email" required
+ placeholder="Insert email">
+ <mat-error *ngFor="let error of getErrors(form.get('email')!,
+ 'Email')">
+ {{error}}
+ </mat-error>
+ </mat-form-field>
+ <!-- Lat -->
+<mat-form-field>
+ <mat-label>Password:</mat-label>
+ <input matInput type="password" formControlName="password" required
+ placeholder="Insert Password">
+ <mat-error *ngFor="let error of getErrors(form.get('password')!,
+ 'Password')">
+ {{error}}
+ </mat-error>
+ </mat-form-field>
+ <div>
+ <button mat-flat-button color="primary"
+ type="submit">
+ Login
+ </button>
+ <button mat-flat-button color="secondary"
+ [routerLink]="['/']">
+ Cancel
+ </button>
+ </div>
+ </form>
+</div>
+```
+Опять же, здесь нет ничего нового: просто реактивная форма с компонентами Angular Material, созданная с использованием
+те же методы, что и наш старый добрый CityEditComponent. Единственная реальная разница - это type="password",
+который мы использовали в matInput для поля пароля, которое будет маскировать вводимый текст при его вводе.
+Как мы видим, мы использовали глобальный компонент mat-error для обработки сообщения об ошибке LoginResult.
+пришел с неудачной попыткой входа в систему и добавил обычные необходимые проверки валидатора в две формы
+поля, которые нам нужно использовать: адрес электронной почты и пароль.
+
+# login.component.scss
+И последнее, но не менее важное: давайте добавим минимальное содержимое в файл login.comComponent.scss:
+
+```scss
+mat-form-field {
+ display: block;
+ margin: 10px 0;
+}
+```
+And that’s it! Our LoginComponent is ready; we just need to add the client-side route and update our
+NavMenuComponent so that our users will be able to reach it.
+
+# Обновление AppRoutingModule
+Откройте файл app-routing.module.ts и добавьте следующую строку после последнего оператора импорта:
+
+```ts
+import { LoginComponent } from './auth/login.component';
+```
+И следующая строка после последнего маршрута:
+
+```ts
+{ path: 'login', component: LoginComponent }
+```
+Теперь наши пользователи смогут получить доступ к LoginComponent, используя маршрут /login.
+
+# Обновление компонента NavMenuComponent
+Однако мы определенно не хотим, чтобы им приходилось вручную вводить его в адресную строку браузера.
+Именно по этой причине откройте файл nav-menu.comComponent.html и добавьте следующие выделенные строки:
+к кнопке «Существующие страны»:
+
+```html
+<a mat-flat-button color="primary" [routerLink]="['/countries']">
+ Countries
+</a>
+<span class="separator"></span>
+<a mat-flat-button color="primary" [routerLink]="['/login']">
+ Login
+</a>
+```
+Как мы видим, на этот раз мы не просто добавили новую кнопку входа в систему: мы также воспользовались возможностью добавить элемент-разделитель между новой кнопкой и предыдущими, чтобы обеспечить другое поведение пользовательского интерфейса. Более
+точнее, мы хотим, чтобы наша кнопка входа в систему была выровнена по правой стороне нашего навигационного меню, а не
+складываются слева вместе с остальными.
+Чтобы это произошло, нам нужно открыть файл nav-menu.comComponent.scss и добавить следующий класс:
+
+```scss
+.separator {
+ flex: 1 1 auto;
+}
+```
+Вот и все. Теперь мы можем, наконец, проверить то, что мы уже сделали.
+
+# Тестирование LoginComponent
+Чтобы протестировать наш новый LoginComponent, нажмите F5, чтобы запустить проекты в режиме отладки, а затем нажмите кнопку «Вход».
+навигационная ссылка, которая должна появиться в правой части верхнего меню. Если мы все сделали правильно, мы
+должен увидеть форму входа.
+
+Давайте сначала проверим сообщение об ошибке. Заполните форму недействительными данными и нажмите кнопку «Войти». Если бы мы сделали
+все правильно, мы должны увидеть mat-error, отображающий сообщение об ошибке, как показано ниже.
+Скриншот:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/41a9b793-9041-460c-a55c-9e2c3e5959b0)
+
+Теперь мы можем проверить фактический вход в систему, используя адрес user@email.com, который мы создали с помощью нашего
+SeedController на ранней стадии (и его пароль). Если все работает так, как должно, мы сможем
+получите действительный токен в журнале консоли браузера, как показано на следующем снимке экрана:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/0fbdad56-159d-402c-9381-766562d31e20)
+
+Неплохо. Кроме того, если мы проверим локальное хранилище нашего браузера (Приложение > Локальное хранилище для браузеров на основе Chromium), мы также должны найти там хранящийся наш токен.
+Теперь нам нужно обновить пользовательский интерфейс нашего приложения, чтобы наши пользователи знали, что они вошли в систему, а также могли выполнять
+выход из системы. Давай сделаем это.
+
+# Добавление наблюдаемого authStatus
+Отличный способ сообщить нашему приложению Angular, что действительный токен был получен, и, следовательно, пользователь
+был успешно аутентифицирован, необходимо настроить выделенный Observable в AuthService.
+Откройте файл auth.service.ts и добавьте в существующий код следующие выделенные строки:
+
+```ts
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable, Subject, tap } from 'rxjs';
+import { LoginRequest } from './login-request';
+import { LoginResult } from './login-result';
+import { environment } from './../../environments/environment';
+@Injectable({
+ providedIn: 'root',
+})
+export class AuthService {
+ private tokenKey: string = "token";
+
+ private _authStatus = new Subject<boolean>();
+ public authStatus = this._authStatus.asObservable();
+ constructor(
+ protected http: HttpClient) {
+ }
+ isAuthenticated() : boolean {
+ return this.getToken() !== null;
+ }
+ getToken() : string | null {
+ return localStorage.getItem(this.tokenKey);
+ }
+ init() : void {
+ if (this.isAuthenticated())
+ this.setAuthStatus(true);
+ }
+ login(item: LoginRequest): Observable<LoginResult> {
+ var url = environment.baseUrl + "api/Account/Login";
+return this.http.post<LoginResult>(url, item)
+ .pipe(tap(loginResult => {
+ if (loginResult.success && loginResult.token) {
+ localStorage.setItem(this.tokenKey, loginResult.token);
+ this.setAuthStatus(true);
+ }
+ }));
+ }
+ logout() {
+ localStorage.removeItem(this.tokenKey);
+ this.setAuthStatus(false);
+ }
+ private setAuthStatus(isAuthenticated: boolean): void {
+ this._authStatus.next(isAuthenticated);
+ }
+}
+```
+
+Наблюдаемая переменная authStatus, которую мы только что добавили в класс AuthService, будет уведомлять всех подписанных пользователей.
+компоненты, касающиеся статуса аутентификации (истина или ложь, в зависимости от задачи входа в систему)
+результат). Статус можно обновить с помощью метода setAuthStatus, который нам придется вызвать два раза:
+- Когда пользователь входит в систему, передается истинный параметр.
+- Когда пользователь выходит из системы, передается ложный параметр.
+- При запуске приложения передача истинного параметра, если пользователь уже прошел проверку подлинности.
+Мы уже реализовали второй случай в новом методе logout(), где также удалили
+токен из localStorage; что касается первого, мы должны реализовать его в LoginComponent, так как
+там происходит процесс входа в систему; третий и последний можно реализовать в классе AppComponent.
+Начнем с LoginComponent. Откройте файл login.comComponent.ts и обновите существующий метод onSubmit().
+следующим образом (новые/обновленные строки выделены):
+
+```Csharp
+if (result.success) {
+ this.router.navigate(["/"]);
+}
+```
+Пока мы были там, мы воспользовались возможностью вызвать метод router.navigate, чтобы передать авторизованный
+пользователь возвращается к домашнему виду.
+
+Также стоит отметить, что, поскольку мы инкапсулировали все задачи чтения и записи токена в
+AuthService, мы изменили модификатор доступа переменной tokenKey с public
+в частное.
+
+Теперь нам просто нужно подписаться на наблюдаемую authStatus там, где она нам нужна.
+
+# Обновление пользовательского интерфейса
+Первый компонент, который приходит на ум, — это NavMenuComponent, поскольку мы хотим обновить верхнюю часть приложения.
+меню навигации в соответствии со статусом входа пользователя.
+Однако, поскольку мы использовали localStorage и, следовательно, планируем сохранять токен между браузерами.
+сеансов нам также необходимо обновить AppComponent, чтобы уведомить подписчиков authStatus о токене.
+присутствие при запуске приложения.
+
+# NavMenuComponent
+Начнем с NavMenuComponent. Откройте файл nav-menu.comComponent.ts и добавьте следующие выделенные строки:
+
+```ts
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Router } from '@angular/router';
+import { Subject, takeUntil } from 'rxjs';
+import { AuthService } from '../auth/auth.service';
+@Component({
+ selector: 'app-nav-menu',
+ templateUrl: './nav-menu.component.html',
+ styleUrls: ['./nav-menu.component.scss']
+})
+export class NavMenuComponent implements OnInit, OnDestroy {
+ private destroySubject = new Subject();
+ isLoggedIn: boolean = false;
+ constructor(private authService: AuthService,
+ private router: Router) {
+ this.authService.authStatus
+ .pipe(takeUntil(this.destroySubject))
+ .subscribe(result => {
+ this.isLoggedIn = result;
+ })
+ }
+onLogout(): void {
+ this.authService.logout();
+ this.router.navigate(["/"]);
+ }
+ ngOnInit(): void {
+ this.isLoggedIn = this.authService.isAuthenticated();
+ }
+ ngOnDestroy() {
+ this.destroySubject.next(true);
+ this.destroySubject.complete();
+ }
+}
+```
+
+Как мы видим, мы подписались на наблюдаемую authStatus, чтобы изменить значение нашего isLoggedIn.
+переменная, которую мы можем использовать для обновления пользовательского интерфейса.
+Мы также добавили локальный метод onLogout(), который можно использовать для обработки действия выхода из системы: когда пользователь
+выполняет выход из системы, этот метод вызовет метод logout() AuthService, который удалит
+токен и уведомить подписчиков. Сразу после этого метод onLogout() вернет пользователя обратно в
+домашний вид с использованием службы Router, которую мы внедрили в конструктор.
+Пока мы были там, мы также воспользовались возможностью реализовать метод takeUntil(), который мы уже создали.
+см. в главе 9, Внутренняя и интерфейсная отладка, чтобы отказаться от подписки при уничтожении компонента.
+В данном конкретном случае эта мера не была строго необходимой, поскольку обычно подразумевается NavMenuComponent.
+экземпляр должен быть создан один раз, но привыкнуть к нему не помешает.
+Давайте теперь воспользуемся этими новыми локальными членами. Откройте файл nav-menu.comComponent.html и обновите его.
+его содержимое, добавив следующие выделенные строки:
+
+```html
+ <span class="separator"></span>
+<a *ngIf="!isLoggedIn" mat-flat-button color="primary"
+ [routerLink]="['/login']">
+ Login
+</a>
+<a *ngIf="isLoggedIn" mat-flat-button color="primary"
+ (click)="onLogout()">
+ Logout
+</a>
+```
+
+Вот и все.
+AppComponent
+Давайте теперь перейдем к AppComponent. Откройте файл app.comComponent.ts и измените существующий код.
+соответственно со следующими выделенными строками:
+
+```ts
+import { Component, OnInit } from '@angular/core';
+import { AuthService } from './auth/auth.service';
+@Component({
+ selector: 'app-root',
+ templateUrl: './app.component.html',
+ styleUrls: ['./app.component.scss']
+})
+export class AppComponent implements OnInit {
+ title = 'WorldCities';
+ constructor(private authService: AuthService) { }
+ ngOnInit(): void {
+ this.authService.init();
+ }
+}
+```
+Теперь подписчики authStatus будут уведомлены о наличии токена при запуске приложения и
+Действуй соответственно. В нашем сценарии это позволит NavMenuComponent отображать ссылку для входа или выхода.
+в зависимости от статуса пользователя.
+
+# Тестирование наблюдаемого
+Теперь мы можем снова запустить тот же тест, что и недавно, и увидеть результат нашей работы. Если бы мы сделали
+все правильно, мы должны увидеть кнопку «Выход» в меню навигации (как показано на
+следующий снимок экрана), который можно использовать для возврата пользователя в исходное состояние без входа в систему:
+
+![image](https://github.com/artemovsergey/Angular/assets/26972859/3f7d1b61-2c3d-4bc3-9f1a-10001f8bc37e)
+
+Это здорово, правда? Однако в нашей головоломке аутентификации все еще не хватает двух очень важных частей:
+- Нам нужно добавить этот токен в заголовок всех наших HTTP-запросов, чтобы веб-API работал
+возможность проверить это и аутентифицировать наши звонки
+- Нам необходимо ограничить некоторые маршруты нашего приложения Angular, чтобы неавторизованные пользователи не могли
+для перехода к компонентам, к которым им не разрешено обращаться, видеть и/или взаимодействовать с ними
+К счастью, фреймворк Angular предоставляет два мощных интерфейса, которые позволяют нам делать все это:
+HttpInterceptors и Route Guard. В следующем разделе мы узнаем, для чего они предназначены и как
+мы можем использовать их для выполнения наших задач.
+
+# Http-перехватчики
+Интерфейс Angular HttpInterceptor предоставляет стандартизированный механизм перехвата и/или
+преобразовывать исходящие HTTP-запросы и/или входящие HTTP-ответы. Перехватчики очень похожи
+к промежуточному программному обеспечению ASP.NET, которое мы представили в главе 3 «Осмотр», а затем поигрались с up
+к этой главе, за исключением того, что они работают на интерфейсном уровне.
+Перехватчики — основная особенность Angular, поскольку их можно использовать для множества различных задач:
+они могут проверять и/или регистрировать HTTP-трафик нашего приложения, изменять запросы, кэшировать ответы и т. д.
+на; это удобный способ централизовать все эти задачи, чтобы нам не приходилось их реализовывать
+явно в наших службах данных и/или в различных вызовах методов на основе HttpClient. Более того,
+они также могут быть объединены в цепочку, что означает, что мы можем иметь несколько перехватчиков, работающих вместе в прямой и обратной цепочке обработчиков запросов/ответов.
+
+Лучший способ понять, как работает HttpInterceptor, — это реализовать его.
+
+# Реализация AuthInterceptor
+Создайте новый файл auth.interceptor.ts в папке /src/app/auth/ и заполните его содержимое следующим образом:
+
+```ts
+import { Injectable } from '@angular/core';
+import { HttpInterceptor, HttpRequest, HttpHandler, HttpEvent,
+HttpErrorResponse } from '@angular/common/http';
+import { Router } from '@angular/router';
+import { catchError, Observable, throwError } from 'rxjs';
+import { AuthService } from './auth.service';
+@Injectable({
+ providedIn: 'root'
+})
+export class AuthInterceptor implements HttpInterceptor {
+ constructor(
+ private authService: AuthService,
+ private router: Router) { }
+ intercept(req: HttpRequest<any>, next: HttpHandler):
+Observable<HttpEvent<any>> {
+ // get the auth token
+ var token = this.authService.getToken();
+ // if the token is present, clone the request
+ // replacing the original headers with the authorization
+ if (token) {
+ req = req.clone({
+ setHeaders: {
+ Authorization: 'Bearer ${token}'
+ }
+ });
+ }
+// send the request to the next handler
+ return next.handle(req).pipe(
+ catchError((error) => {
+ // Perform logout on 401 – Unauthorized HTTP response errors
+ if (error instanceof HttpErrorResponse && error.status === 401) {
+ this.authService.logout();
+ this.router.navigate(['login']);
+ }
+ return throwError(error);
+ })
+ );
+ }
+}
+```
+Как мы видим, AuthInterceptor реализует интерфейс HttpInterceptor, определяя метод intercept().
+метод. Этот метод решает две основные задачи:
+- Перехват всех исходящих HTTP-запросов и добавление токена носителя JWT в их HTTP-запросы.
+заголовки (если они есть), чтобы JwtBearerMiddleware ASP.NET Core мог проверять
+это и аутентифицировать наши звонки
+- Перехват всех ошибок HTTP и, в случае кода состояния ответа 401 — Несанкционированный, выполнение метода logout() службы AuthService и возврат пользователя к представлению входа в систему.
+Вызов метода logout() после ошибки 401 гарантирует, что токен будет удален из
+localStorage всякий раз, когда серверная часть обнаруживает, что он больше не действителен (например, по истечении срока его действия), таким образом
+позволяя нашим пользователям снова войти в систему.
+
+Удаление токена JWT по истечении срока его действия и, как следствие, выход наших пользователей из системы – это
+выбор реализации, который мы сделали для простоты: большинство производственных приложений предоставляют
+лучшая альтернатива путем принятия механизма обновления токена, который может быть довольно сложным
+реализовать в рамках этой книги. См. раздел «Завершающие штрихи» в конце.
+этой главы для получения более подробной информации об этом.
+
+Теперь у нас есть AuthInterceptor, который может эффективно использовать наш токен JWT на протяжении всего процесса.
+Цикл HTTP-запроса/ответа: нам просто нужно указать нашему Angular-приложению использовать его.
+
+# Обновление AppModule
+Как и любой другой класс Angular, AuthInterceptor необходимо правильно настроить на корневом уровне.
+AppModule. Для этого необходимо добавить следующие выделенные ссылки:
+
+```ts
+import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
+import { AuthInterceptor } from './auth/auth.interceptor';
+```
+И добавьте AuthInterceptor в коллекцию поставщиков следующим образом:
+
+```ts
+providers: [
+ { provide: HTTP_INTERCEPTORS,
+ useClass: AuthInterceptor,
+ multi: true }
+]
+```
+Теперь AuthInterceptor готов «перехватить» все исходящие HTTP-запросы и добавить токен (если
+присутствует), чтобы наш веб-API ASP.NET Core мог получить его и соответствующим образом авторизовать нас.
+
+Свойство multi: true, которое мы видим в предыдущем коде, является обязательным параметром.
+потому что HTTP_INTERCEPTORS — это токен нескольких поставщиков, который ожидает внедрения массива
+нескольких значений, а не одного.
+
+Прежде чем перейти к следующей теме, давайте потратим немного времени на проверку работы AuthInterceptor.
+отлично.
+
+# Тестирование HttpInterceptor
+Нажмите F5, чтобы запустить наше приложение в режиме отладки. Нажмите ссылку «Войти» в меню навигации и выполните
+войдите в систему, используя одного из наших тестовых пользователей, как мы это делали в предыдущих тестах.
+После входа в систему перейдите к представлению «Страны», а затем щелкните страну по нашему выбору, чтобы получить доступ к
+Редактировать представление страны; оказавшись там, попробуйте отредактировать страну и сохранить нашу работу. Если HttpInterceptor
+работает правильно, мы должны вернуться к представлению «Страны» и увидеть обновленную информацию о стране.
+данные, поскольку HTTP-запрос был отправлен в веб-API с действительным токеном.
+Сразу после этого нажмите ссылку «Выход» в меню навигации и попробуйте выполнить те же идентичные действия.
+Если HttpInterceptor работает правильно, теперь мы должны увидеть сообщение об ошибке 401 — несанкционированный HTTP.
+в журнале консоли браузера при попытке спасти нашу страну. Это ожидаемое поведение, поскольку
+Токен JWT был удален из localStorage сразу после выхода из системы, поэтому HTTP-запрос был
+отправляется без действительного заголовка авторизации и поэтому блокируется атрибутом AuthorizeAttribute веб-API.
+Давайте теперь перейдем к следующей функции: Route Guards.
+
+# Охранники маршрута
+Как мы узнали в главе 3 «Оглядываясь вокруг», маршрутизатор Angular — это сервис, который позволяет нашим пользователям
+перемещаться по различным представлениям нашего приложения; каждое представление обновляет интерфейс и (возможно) вызывает
+серверная часть для получения контента.
+Если мы подумаем об этом, мы увидим, что маршрутизатор Angular является интерфейсным аналогом ASP.NET.
+Базовый интерфейс маршрутизации, который отвечает за сопоставление URI запросов с внутренними конечными точками и отправку входящих запросов на эти конечные точки. Поскольку оба этих модуля имеют одинаковое поведение,
+у них также есть схожие требования, о которых мы должны учитывать при реализации аутентификации.
+и механизм авторизации в нашем приложении.
+
+В предыдущих главах мы определили множество маршрутов как на внутренней, так и на внешней стороне, чтобы предоставить нашим пользователям доступ к различным методам действий ASP.NET Core и представлениям Angular, которые мы создали.
+реализовано. Если мы подумаем об этом, то увидим, что все эти маршруты имеют одну общую черту: любой
+может получить к ним доступ. Другими словами, любой пользователь может свободно перейти в любое место нашего веб-приложения. Они могут редактировать
+города и страны, скажем так… Или, по крайней мере, они будут думать, что могут, пока AuthorizeAttribute
+то, что мы реализовали на наших серверных контроллерах на раннем этапе, не позволяет им сделать это. Факт
+то, что веб-API будет активно блокировать их попытку, отлично подходит для защиты наших данных, и мы никогда не должны
+избавиться от такой функции, но это не так уж и здорово с точки зрения пользовательского опыта, поскольку она все равно покинет нашу
+пользователи в темноте:
+Почему приложение сообщает мне, что я могу редактировать такой элемент, если мне это не разрешено?
+Само собой, такое поведение хоть и допустимо в разработке, но крайне нежелательно.
+при любом сценарии производства; когда приложение выйдет в свет, мы обязательно захотим защитить некоторые из них
+маршруты, ограничивая их только авторизованными пользователями, другими словами, охраняя их.
+Route Guards — это механизм, обеспечивающий надлежащее соблюдение такого требования; их можно добавить в наш маршрут
+конфигурация для возврата значений, которые могут управлять поведением маршрутизатора следующим образом:
+- Если Route Guard возвращает true, процесс навигации продолжается.
+- Если он возвращает false, процесс навигации останавливается.
+- Если возвращается UrlTree, процесс навигации отменяется и заменяется новой навигацией по
+данное UrlTree
+При правильной реализации Route Guards не позволит нашим пользователям видеть странное поведение на стороне клиента.
+и задавать вопросы, подобные приведенному выше.
+Доступные охранники
+В Angular на данный момент доступны следующие Route Guards:
+- CanActivate: обеспечивает навигацию по заданному маршруту.
+- CanActivateChild: обеспечивает навигацию по заданному дочернему маршруту.
+- CanDeactivate: обеспечивает переход от текущего маршрута.
+- Решение. Выполняет некоторые произвольные операции (например, задачи извлечения пользовательских данных) перед
+активация маршрута
+- CanLoad: обеспечивает переход к заданному асинхронному модулю.
+Каждый из них доступен через суперкласс, который действует как общий интерфейс. Всякий раз, когда мы хотим
+чтобы создать собственную защиту, нам просто нужно расширить соответствующий суперкласс и реализовать
+соответствующий метод(ы).
+Любой маршрут может быть настроен с несколькими охранниками: охранниками CanDeactivate и CanActivateChild.
+будет проверен в первую очередь, от самого глубокого дочернего маршрута к вершине; сразу после этого роутер проверит
+Можно активировать защиту сверху вниз до самого глубокого дочернего маршрута. После этого маршруты CanLoad будут
+проверить наличие асинхронных модулей. Если какой-либо из этих охранников вернет false, навигация будет
+остановлено, и все ожидающие защиты будут отменены.
+
+Хватит теории: давайте добавим свой собственный Auth Guard.
+
+# Реализация AuthGuard
+Создайте новый файл auth.guard.ts в папке /src/app/auth/ и заполните его содержимое следующим образом:
+
+```ts
+import { Injectable } from '@angular/core';
+import { CanActivate, ActivatedRouteSnapshot, RouterStateSnapshot, Router,
+UrlTree } from '@angular/router';
+import { Observable } from 'rxjs';
+import { AuthService } from './auth.service';
+@Injectable({
+ providedIn: 'root'
+})
+export class AuthGuard implements CanActivate {
+ constructor(
+ private authService: AuthService,
+ private router: Router
+ ) {
+ }
+ canActivate(route: ActivatedRouteSnapshot, state: RouterStateSnapshot):
+ Observable<boolean | UrlTree> | Promise<boolean | UrlTree> | boolean |
+UrlTree {
+ if (this.authService.isAuthenticated()) {
+ return true;
+ }
+ this.router.navigate(['/login'], { queryParams: { returnUrl: state.url }
+});
+ return false;
+ }
+}
+```
+Как мы видим, наш охранник расширяет интерфейс CanActivate, возвращая true или false в зависимости от
+возвращаемое значение метода isAuthenticated() класса AuthService (которое вводится в конструктор через DI), тем самым условно разрешая или блокируя навигацию на его основе; неудивительно его имя — AuthGuard.
+
+После создания охранники могут быть привязаны к различным маршрутам из самой конфигурации маршрута, которая предоставляет свойство для каждого типа охранника. Давайте добавим свойство canActivate к соответствующим маршрутам в нашем AppRoutingModule.
+
+# Обновление AppRoutingModule
+Откройте файл app-routing.module.ts и соответствующим образом обновите его содержимое следующими выделенными строками:
+
+```ts
+import { AuthGuard } from './auth/auth.guard';
+const routes: Routes = [
+ { path: '', component: HomeComponent, pathMatch: 'full' },
+ { path: 'cities', component: CitiesComponent },
+ { path: 'city/:id', component: CityEditComponent, canActivate: [AuthGuard] },
+ { path: 'city', component: CityEditComponent, canActivate: [AuthGuard] },
+ { path: 'countries', component: CountriesComponent },
+ { path: 'country/:id', component: CountryEditComponent, canActivate:
+[AuthGuard] },
+ { path: 'country', component: CountryEditComponent, canActivate: [AuthGuard]
+},
+ { path: 'login', component: LoginComponent }
+];
+```
+
+Вот и все. Наш AuthGuard теперь запретит незарегистрированным пользователям доступ к CityEditComponent и CountryEditComponent.
+
+# Тестирование AuthGuard
+Давайте теперь проверим наш AuthGuard, чтобы увидеть, возвращает ли он ожидаемые результаты.
+Нажмите F5, чтобы запустить наше приложение в режиме отладки. Нажмите ссылку «Войти» в меню навигации и выполните
+войдите в систему, используя одного из наших тестовых пользователей, как мы это делали в предыдущих тестах.
+После входа в систему перейдите к представлению «Страны», а затем щелкните страну по нашему выбору, чтобы получить доступ к
+Изменить представление страны. Если AuthGuard работает правильно, мы сможем получить доступ к представлению, поскольку наш
+Статус входа в систему позволяет нам активировать этот маршрут.
+После этого нажмите ссылку «Выход» в меню навигации и попробуйте выполнить те же самые шаги.
+Если AuthGuard работает правильно, нажмите на название страны или кнопку «Добавить новую страну».
+переведите нас в режим входа в систему, поскольку наш статус незарегистрированных пользователей не позволяет незарегистрированным пользователям активировать
+эти маршруты.
+
+Вот и все. Теперь поведение нашего приложения Angular будет соответствовать политикам аутентификации, которые мы настроили.
+в нашем веб-API.
+
+# Последние штрихи
+Наша тяжелая работа наконец подошла к концу. Однако нашему приложению все еще не хватает некоторой дополнительной доработки.
+штрихи, которые еще больше улучшат то, что мы сделали до сих пор.
+Более конкретно, вот список «незначительных» и серьезных проблем пользовательского интерфейса, UX и функциональных проблем, которые нам следует решить.
+адрес, если мы хотим выпустить наше приложение в производство:
+- Скройте кнопки «Добавить новый город» и «Добавить новую страну» для незарегистрированных пользователей, используя *ngIf.
+директива препроцессора и метод isAuthenticated() класса AuthService.
+- Реализуйте RegisterComponent, чтобы пользователи могли создавать учетные записи. Излишне говорить, что это
+Эта функция также потребует добавления новых маршрутов на стороне клиента, новых интерфейсов, новых валидаторов.
+для адресов электронной почты и паролей, новые методы действий в AccountController и т. д.
+- Добавьте механизм обновления токена, позволяющий клиенту автоматически получать новый токен после
+срок действия предыдущего истекает вместо удаления истекшего и перенаправления наших пользователей на
+страница авторизации. Реализация этой функции потребует рефакторинга нашего класса AuthInterceptor,
+выделенная таблица БД для хранения токенов обновления (AspNetUserTokens, созданных нашим Identity
+для этого можно использовать миграцию, по крайней мере в некоторой степени), дополнительные серверные конечные точки и
+более.
+Первые две функции можно легко реализовать с помощью того, что мы уже узнали; однако, обновление
+Механизм токенов может быть довольно сложным в реализации, и он выходит далеко за рамки примера реализации, который мы рассмотрели в этой главе и который предназначен только для демонстрационных целей.
+К счастью, существует множество сторонних пакетов, включая, помимо прочего, IdentityServer.
+о котором мы говорили в начале этой главы, это позволит нам пропустить большую часть тяжелой работы.
+
+# Краткое содержание
+В начале этой главы мы представили концепции аутентификации и авторизации, признавая тот факт, что большинству приложений, включая наше, действительно требуется механизм для правильной обработки
+аутентифицированные и неаутентифицированные клиенты, а также авторизованные и неавторизованные запросы.
+Нам потребовалось некоторое время, чтобы правильно понять сходства и различия между аутентификацией.
+и авторизация, а также плюсы и минусы решения этих задач с помощью нашего внутреннего провайдера.
+или делегировать их сторонним поставщикам, таким как Google, Facebook и Twitter. Сразу после этого,
+мы кратко перечислили различные методы веб-аутентификации, доступные в настоящее время: сеансы,
+токены, подписи и различные двухфакторные стратегии. После тщательного рассмотрения мы выбрали
+придерживаться подхода на основе токенов с использованием JWT, поскольку это надежный и хорошо известный стандарт для любого
+интерфейсный фреймворк.
+
+Чтобы иметь возможность его использовать, мы добавили необходимые пакеты в наш проект и сделали все необходимое, чтобы правильно
+настроить их, например выполнить некоторые обновления в наших классах Program и ApplicationDbContext.
+и создание нового объекта ApplicationUser. После внедрения всех необходимых внутренних изменений, как
+а также добавив несколько новых контроллеров и сервисов, мы создали новую миграцию Entity Framework Core.
+чтобы соответствующим образом обновить нашу базу данных.
+Сразу после этого мы переключились на наш проект Angular, где нам пришлось заниматься фронтенд-частью.
+работа. При этом мы потратили некоторое драгоценное время на обзор новых функций Angular, которые мы использовали.
+использовать для выполнения различных задач, таких как перехватчики HTTP и Route Guard, а также научиться
+используйте их для защиты некоторых представлений, маршрутов и API наших приложений от несанкционированного доступа.
+Теперь мы готовы перейти к следующей теме — прогрессивным веб-приложениям, которая будет держать нас в напряжении на протяжении всего процесса.
+следующая глава.
+
+# Предлагаемые темы
+Для получения дополнительной информации мы рекомендуем следующие темы: Аутентификация, авторизация, HTTP.
+протокол, уровень защищенных сокетов, управление состоянием сеанса, косвенность, единый вход, библиотека аутентификации Azure AD (ADAL), ASP.NET Core Identity, IdentityServer, OpenID, Open ID Connect (OIDC),
+OAuth, OAuth 2, двухфакторная аутентификация (2FA), SMS 2FA, алгоритм одноразового пароля на основе времени (TOTP), TOTP 2FA, IdentityUser, без сохранения состояния, межсайтовый скриптинг (XSS), подделка межсайтового запроса
+(CSRF), Angular HttpClient, Route Guard, Http Interceptor, LocalStorage, API веб-хранилища, серверная часть
+предварительный рендеринг, Angular Universal, типы браузеров, универсальные типы, JWT, утверждения и AuthorizeAttribute.
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
