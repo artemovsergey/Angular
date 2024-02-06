@@ -7,7 +7,7 @@
 # Создание проекта
 
 ```cmd
-ng new nameapp --module=app --skip-tests
+ng new nameapp --skip-tests
 ng new nameapp --directory SportsStore/ClientApp --routing true --style css --skip-tests true --skip-git true
 ```
 
@@ -45,7 +45,7 @@ npm start
 # Создание компонента
 
 ```
-ng g c namecomponent --skip-tests
+ng g c namecomponent --skip-tests  --module=app
 ```
 
 # Роутер
