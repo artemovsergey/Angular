@@ -7,7 +7,7 @@
 # Создание проекта
 
 ```cmd
-ng new nameapp --skip-tests
+ng new nameapp --module=app --skip-tests
 ng new nameapp --directory SportsStore/ClientApp --routing true --style css --skip-tests true --skip-git true
 ```
 
