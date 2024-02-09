@@ -49,6 +49,13 @@ ng g c namecomponent --skip-tests  --module=app
 ```
 опция --flat, которая указывает CLI генерировать новые файлы в текущей папке
 
+Компонент ts
+```
+ng generate component BaseForm --skip-import --skip-tests --inline-template
+--inline-style --flat
+```
+
+
 
 # Роутер
 
