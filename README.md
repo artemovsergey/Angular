@@ -828,5 +828,8 @@ export class RoleEditComponent implements OnInit {
 
 ```
 
+# Angular Material
 
-
+```
+ng add @angular/material
+```
