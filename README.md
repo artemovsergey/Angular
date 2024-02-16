@@ -833,3 +833,10 @@ export class RoleEditComponent implements OnInit {
 ```
 ng add @angular/material
 ```
+
+```html
+<button mat-icon-button color="primary" (click)="redirectToDetails(element.id)">
+    <mat-icon class="mat-18">reorder</mat-icon>
+</button>
+```
+
