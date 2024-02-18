@@ -840,3 +840,306 @@ ng add @angular/material
 </button>
 ```
 
+# Сервис
+
+```ts
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { environment } from '../../enviroments/enviroment';
+@Injectable({
+  providedIn: 'root'
+})
+export class RepositoryService {
+  constructor(private http: HttpClient) { }
+  public getData = () => {
+    return this.http.get<any>(this.createCompleteRoute(environment.apiUrl));
+  }
+ 
+  public create = (route: string, body: any) => {
+    return this.http.post(this.createCompleteRoute(environment.apiUrl), body, this.generateHeaders());
+  }
+ 
+  public update = (route: string, body: any) => {
+    return this.http.put(this.createCompleteRoute(environment.apiUrl), body, this.generateHeaders());
+  }
+ 
+  public delete = (route: string) => {
+    return this.http.delete(this.createCompleteRoute(environment.apiUrl));
+  }
+ 
+  private createCompleteRoute = (envAddress: string) => {
+    return `${envAddress}`;
+  }
+ 
+  private generateHeaders = () => {
+    return {
+      headers: new HttpHeaders({'Content-Type': 'application/json'})
+    }
+  }
+}
+```
+
+# Сервис 2
+
+```ts
+import { HttpClient, HttpParams } from "@angular/common/http";
+import { Injectable } from "@angular/core";
+import { map } from "rxjs";
+import { Observable } from "rxjs/internal/Observable";
+import { environment } from "../../enviroments/enviroment";
+
+@Injectable({
+  providedIn: 'root'
+})
+
+export class EmployeeService {
+
+  url: string = environment.apiUrl;
+  constructor(private http: HttpClient) { }
+
+  // получение пользователей по параметрам
+
+  getEmployees(options: Options): Observable<any> {
+
+    var params = new HttpParams();
+    params = params
+                    .set("sortColumn", options.sortColumn)
+                    .set("sortOrder", options.sortOrder)
+                    .set("pageIndex", options.pageIndex)
+                    .set("pageSize", options.pageSize);
+
+    if (options.search != "") {
+      params = params.set("fio", options.search);
+    }
+
+    if (options.salary != 0) {
+      params = params.set("salary", options.salary);
+
+      console.log(params);
+    }
+
+    //const url = `${this.url}?pageSize=${options.pageSize}&fio=${options.search}`;
+    return this.http.get(this.url, {params}).pipe(map(response => response));
+  }
+}
+
+export interface Options {
+  //departamentId: number;
+  //fio: string;
+  //date: Date;
+  //birthdate: Date;
+  //salary: number;
+  sortColumn: string;
+  sortOrder: string;
+  pageIndex: number;
+  pageSize: number;
+  search: string;
+  salary: number;
+}
+
+```
+
+# Employee template
+
+```html
+<div class="row my-5 ">
+    <div class="col">
+
+        <p *ngIf="!employees"><em>Loading...</em></p>
+
+        <div>
+
+            <div [hidden]="!employees">
+                <input #filter
+                       (keyup)="search($event)"
+                       placeholder="Поиск">
+            </div>
+
+            <div>
+                <label [textContent]="slider2.value" class="form-label">Зарплата</label>
+                <input  #slider2 type="range" class="form-range"  value="100" step="100" min="100" max="1000" (input) ="slider($event)">
+            </div>
+
+            <div class="input-group mb-3">
+
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    Size:
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><button class="dropdown-item" type="button" (click)="size(5)">5</button></li>
+                    <li><button class="dropdown-item" type="button" (click)="size(10)">10</button></li>
+                </ul>
+            </div>
+
+            <table class="table table-borderless" [hidden]="!employees">
+                <thead>
+                <tr>
+                    <th scope="col" (click)="order('DepartamentId')" role="button">
+                        Отдел
+                    </th>
+
+                    <th scope="col" (click)="order('FullName')" role="button">
+                        Фио
+                    </th>
+
+                    <th scope="col" (click)="order('Salary')" role="button">
+                        Заработная плата
+                    </th>
+
+                    <th scope="col" (click)="order('DateEmployment')" role="button">
+                        Дата устройства
+                    </th>
+
+                    <th scope="col" (click)="order('BirthDay')" role="button">
+                        Дата рождения
+                    </th>
+
+                    <th scope="row"></th>
+                    <th scope="row"></th>
+                </tr>
+                </thead>
+
+                <tbody>
+
+                <tr *ngFor="let employee of employees" align="left">
+                    <td>{{ employee.departament?.name }}</td>
+                    <td>{{ employee.fullName }}</td>
+                    <td>{{ employee.salary | currency:"RUB":"symbol" }}</td>
+                    <td>{{ employee.dateEmployment | date:'dd.MM.yyyy' }}</td>
+                    <td>{{ employee.birthDay | date:'dd.MM.yyyy' }}</td>
+
+                    <td><button class="btn btn-info">Edit</button></td>
+                    <td><button class="btn btn-danger">Удалить</button></td>
+                </tr>
+
+                </tbody>
+            </table>
+
+            <nav *ngIf="numbers.length > 1">
+                <ul class="pagination justify-content-center">
+                    <li id="prev" class="page-item" [ngClass]="{ 'disabled': options.pageIndex === 1 }">
+                        <a class="page-link" (click)="prev()">Previous</a>
+                    </li>
+                    <ng-container *ngIf="employees">
+                        <li class="page-item" *ngFor="let number of numbers" [ngClass]="{ 'active': options.pageIndex === number }">
+                            <a class="page-link" (click)="to(number)">{{number}}</a>
+                        </li>
+                    </ng-container>
+                    <li id="next" class="page-item" [ngClass]="{ 'disabled': options.pageIndex === numbers.length }">
+                        <a class="page-link" (click)="next()" disabled="true">Next</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+
+    </div>
+</div>
+```
+
+# Employee Component
+```ts
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Employee } from '../../models/employee';
+import { NgIf,NgFor } from '@angular/common';
+import { DatePipe } from '@angular/common';
+import { CurrencyPipe } from '@angular/common';
+import { EmployeeService, Options } from '../../services/employee.service';
+import { Subscription } from 'rxjs';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-employees',
+  standalone: true,
+  imports: [NgIf, NgFor, DatePipe, CurrencyPipe,CommonModule],
+  templateUrl: './employees.component.html',
+  styleUrl: './employees.component.scss'
+})
+
+export class EmployeesComponent implements OnInit, OnDestroy {
+
+  title: string = "Сотрудники";
+  employees?: Employee[] | null;
+
+  options: Options = {
+    sortColumn:"FullName",
+    sortOrder: "ASC",
+    pageIndex: 1,
+    pageSize: 5,
+    search: "",
+    salary: 0
+  };
+
+  getEmployeesSub: Subscription;
+
+  constructor(private employeeService: EmployeeService) { }
+
+  ngOnInit(): void {
+    this.getEmployees();
+  }
+
+  ngOnDestroy(): void {
+    this.getEmployeesSub.unsubscribe();
+  }
+
+  getEmployees(): void {
+    this.getEmployeesSub = this.employeeService
+                               .getEmployees(this.options)
+                               .subscribe(response => this.employees = response.data);
+  }
+
+  // поиск по имени
+  search($event: any): void {
+    const text = $event.target.value;
+    this.options.search = text;
+    //this.options.page = 1;
+    this.getEmployees();
+  }
+
+  // поиск по зарплате
+  slider($event: any): void {
+    const text = $event.target.value;
+    this.options.salary = Number(text);
+    console.log(this.options.salary)
+    this.options.pageIndex = 1;
+    this.getEmployees();
+  }
+
+
+  size(size: number) {
+    this.options.pageSize = size;
+    this.options.pageIndex = 1;
+    this.getEmployees();
+  }
+
+  get numbers(): number[] {
+    const limit = Math.ceil(10 / this.options.pageSize);
+    return Array.from({ length: limit }, (_, i) => i + 1);
+  }
+
+  next() {
+    this.options.pageIndex++;
+    this.getEmployees();
+  }
+
+  prev() {
+    this.options.pageIndex--;
+    this.getEmployees();
+  }
+
+  to(page: number) {
+    this.options.pageIndex = page;
+    this.getEmployees();
+  }
+
+  order(column: string) {
+
+    this.options.sortColumn = column;
+
+    this.getEmployees();
+  }    
+}
+
+```
+
+
+
