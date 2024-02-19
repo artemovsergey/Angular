@@ -3,19 +3,11 @@
 - angular рекомендует работать через автономные компоненты
 - можно работать через модули
 
-
 # Создание проекта
 
 ```cmd
 ng new nameapp --skip-tests
 ng new nameapp --directory SportsStore/ClientApp --routing true --style css --skip-tests true --skip-git true
-```
-
-# Запуск
-
-команда из ```package.json```
-```cmd
-npm start
 ```
 
 ## Binding
@@ -24,16 +16,14 @@ npm start
 - [value]="title"
 - [{ngModel}="title"]
 
-Замечание:  imports:[FormsModule] для двусторонней привязки
+Замечание: imports:[FormsModule] для двусторонней привязки
 
-
-- стили
-
+# Binding style
 ```
 <h1 [style.font-size]="count+'px'"> {{title}}</h1>
 ```
 
-- класс
+# Binding class
 ```
 <button [class]="enable ? 'newclass' : 'oldclass'"
         (click)="increase()">
@@ -162,6 +152,7 @@ const PROXY_CONFIG = [
 
 module.exports = PROXY_CONFIG;
 ```
+
 # enviroment.prod.ts
 
 ```Cshar
@@ -194,15 +185,12 @@ const routes: Routes = [
   imports: [RouterModule.forRoot(routes)],
   exports: [RouterModule]
 })
-
-
 export class AppRoutingModule { }
 ```
 
 ```html
 <router-outlet></router-outlet>
 ```
-
 
 # AngularMaterialModule
 
@@ -246,25 +234,6 @@ import { MatSelectModule } from '@angular/material/select';
  ]
 })
 export class AngularMaterialModule { }
-```
-
-# Models
-
-```ts
-export interface User {
-  id: number;
-  email: string;
-  login: string;
-  password: string;
-  roleId: Role[];
-}
-
-export interface Role {
-  id: number;
-  name: string;
-  users: User[] | null;
-}
-
 ```
 
 # UsersComponent
