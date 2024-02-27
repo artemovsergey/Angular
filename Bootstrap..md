@@ -1,5 +1,9 @@
 # Bootstrap
 
+https://getbootstrap.su/docs/5.0/examples/checkout/
+https://getbootstrap.su/docs/5.0/examples/cheatsheet/#badge
+
+
 ## Выравнивание адаптивных блоков
 
 - align-items-start- выравнивание относительно начала ряда (по левому краю);
