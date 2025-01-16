@@ -834,9 +834,137 @@ export class TaskdatePipe implements PipeTransform {
   }
 
 
+
+
+
 }
 
 ```
+
+# Компонент диалога
+
+```html
+
+<h2 mat-dialog-title> Создание задачи </h2>
+
+<mat-dialog-content>
+
+    <mat-form-field>
+        <mat-label>Название задачи </mat-label>
+        <input matInput [(ngModel)]="currentTask.title" />
+    </mat-form-field>
+
+    <mat-form-field>
+        <mat-label>Выбор даты</mat-label>
+        <input matInput [matDatepicker]="picker" [(ngModel)]="currentTask.date">
+        <mat-hint>MM/DD/YYYY</mat-hint>
+        <mat-datepicker-toggle matIconSuffix [for]="picker"></mat-datepicker-toggle>
+        <mat-datepicker #picker></mat-datepicker>
+    </mat-form-field>
+
+
+    <mat-form-field>
+        <mat-label> Категория </mat-label>
+        <mat-select [(ngModel)] = "currentTask.categoryId">
+
+        <mat-option [value] = "null"> Нет категории </mat-option>
+        
+        @for (c of categories; track c.id) {
+            <mat-option [value]="c.id">{{c.title}}</mat-option>
+        }
+        </mat-select>
+    </mat-form-field>
+
+    <mat-form-field>
+        <mat-label> Приоритет </mat-label>
+        <mat-select [(ngModel)] = "currentTask.priorityId">
+        <mat-option> Нет приоритета </mat-option>
+        @for (p of priorities; track p.id) {
+            <mat-option [value]="p.id">{{p.title}}</mat-option>
+        }
+        </mat-select>
+    </mat-form-field>
+  
+  </mat-dialog-content>
+
+<mat-dialog-actions>
+  <button mat-stroked-button color="primary" (click) = "cancell()" cdkFocusInitial>Cancel</button>
+  <button mat-flat-button color="primary" [disabled]="currentTask.title.trim().length == 0"  (click) = "ok()">Ok</button>
+</mat-dialog-actions>
+```
+
+```ts
+@Component({
+  selector: 'app-create-task-dialog',
+  standalone: true,
+  imports: [CommonModule, MatSelectModule, MatDatepickerModule, MatCheckboxModule, MatDialogModule, MatFormFieldModule, MatInputModule, FormsModule, MatButtonModule, MatInputModule],
+  templateUrl: './create-task-dialog.component.html',
+  styleUrl: './create-task-dialog.component.scss'
+})
+export class CreateTaskDialogComponent {
+  
+  categories: Category[] = []
+  priorityService = inject(PriorityService)
+  categoryService = inject(CategoryService)
+  dialogRef = inject(MatDialogRef<CreateTaskDialogComponent>)
+  data = inject<any>(MAT_DIALOG_DATA)
+  priorities: Priority[] = []
+  
+  currentTask: Task = {
+    id: 0,
+    title: "",
+    complete: false,
+    date: new Date()
+  }
+
+  ngOnInit(): void {
+    this.categoryService.getAll().subscribe(r =>this.categories = r)
+    this.priorityService.getAll().subscribe(r =>this.priorities = r)
+  }
+  
+  ok(): any {
+    console.log("Передана задача: ", this.currentTask)
+     this.dialogRef.close(this.currentTask)
+  }
+  
+  cancell() {
+    this.dialogRef.close()
+  }
+
+  // compareById(f1: any, f2: any): boolean {
+  //   return f1 && f2 && f1.id === f2.id;
+  // }
+  
+
+}
+```
+
+```ts
+  createTask() {
+
+    const buttonElement = document.activeElement as HTMLElement; // Get the currently focused element
+    buttonElement.blur(); // Remove focus from the button
+  
+    const dialogRef = this.dialog.open(
+      CreateTaskDialogComponent,
+      {data: [], autoFocus: true, width: '50%'}  // конфигурация
+    );
+
+    dialogRef.afterClosed().subscribe(result => {
+      if (result && result as Task){
+        this.taskService.create(result).subscribe(
+          next => {
+            this.taskService.getAll().subscribe(r => {
+              this.taskService.tasks$.next(r)
+            })
+          }
+        )
+      }
+    });
+
+  }
+```
+
 
 
 
