@@ -1,5 +1,98 @@
 # Технический журнал Angular
 
+
+# Model
+
+```ts
+export interface Task extends IBase {
+    title: string,
+    complete: boolean,
+
+    categoryId?: number,   
+    category?: Category,
+
+    priority?: Priority,
+    priorityId?: number,
+    
+    date?: Date
+}
+```
+
+# Inteface
+
+```ts
+
+export interface IRepository<T> {
+
+    get(id: number): Observable<T>;
+
+    create(object: T): Observable<T>;
+    
+    del(id: number): Observable<boolean>;
+    
+    update(t: T): Observable<T>;
+
+    getAll(): Observable<T[]>
+
+}
+
+export interface ITaskRepository extends IRepository<Task>{
+    getTasksByCategory(categoryId: number): Observable<Task[]>
+}
+  
+```
+
+# TaskService
+
+```ts
+@Injectable({
+  providedIn: 'root'
+})
+export class TasksService implements ITaskRepository {
+
+  http = inject(HttpClient)
+
+  // сервис отдает поток данных
+  tasks$ = new BehaviorSubject<Task[]>([]);
+
+  getTasksByCategory(categoryId: number): Observable<Task[]>{
+    return this.http.get<Task[]>(`${environment.baseUrl}/category/${categoryId}/tasks`)
+  }
+
+  getAll(): Observable<Task[]> {
+    return this.http.get<Task[]>(`${environment.baseUrl}/tasks`)
+    //return this.http.get<Task[]>('testdata.json')
+  }
+
+  get(id: number): Observable<Task> {
+    return this.http.get<Task>(`${environment.baseUrl}/tasks/${id}`)
+  }
+
+  create(t: Task): Observable<Task> {
+    return this.http.post<Task>(`${environment.baseUrl}/tasks`, t, this.generateHeaders())
+  }
+
+  del(id: number): Observable<boolean> {
+    return this.http.delete<boolean>(`${environment.baseUrl}/tasks/${id}`)
+  }
+
+  update(t: Task): Observable<Task> {
+    return this.http.put<Task>(`${environment.baseUrl}/tasks`, t, this.generateHeaders())
+  }
+
+  private generateHeaders = () => {
+    return {
+      headers: new HttpHeaders({'Content-Type': 'application/json'})
+    }
+  }
+
+  
+}
+
+```
+
+
+
 # UsersComponent
 
 ```ts
