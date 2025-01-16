@@ -85,12 +85,22 @@ export class TasksService implements ITaskRepository {
       headers: new HttpHeaders({'Content-Type': 'application/json'})
     }
   }
-
-  
+ 
 }
-
 ```
 
+# Output
+
+```ts
+@Output() taskEvent = new EventEmitter<Task>()
+  emitTask(task: Task){
+    this.taskEvent.emit(task)
+}
+```
+
+```html
+<app-tasks  (taskEvent)="showTask($event)" />
+```
 
 
 # UsersComponent
