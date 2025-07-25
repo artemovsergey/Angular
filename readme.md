@@ -80,13 +80,7 @@ export class TaskdatePipe implements PipeTransform {
     // }
 
     return new DatePipe('en').transform(date,format);
-
   }
-
-
-
-
-
 }
 
 ```
